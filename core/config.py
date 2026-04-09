@@ -1,0 +1,88 @@
+from __future__ import annotations
+
+from typing import List
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    APP_NAME: str = "Fuel Guard API"
+    APP_ENV: str  = "development"
+    API_V1_PREFIX: str = "/api/v1"
+
+    # Comma-separated list of allowed CORS origins.
+    # Override in production: ALLOWED_ORIGINS="https://admin.fuelguard.com,https://app.fuelguard.com"
+    ALLOWED_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:8080",
+    ]
+
+    # ── Firebase ──────────────────────────────────────────────────────────────
+    # For local dev: path to serviceAccountKey.json
+    # For Railway/production: set FIREBASE_CREDENTIALS_JSON instead (see firebase.py)
+    FIREBASE_CREDENTIALS_PATH: str = "serviceAccountKey.json"
+    FIREBASE_PROJECT_ID: str   = "fuelguard-f3112"
+    FIREBASE_STORAGE_BUCKET: str = "fuelguard-f3112.firebasestorage.app"
+
+    # ── JWT ───────────────────────────────────────────────────────────────────
+    # MUST be overridden in production via environment variable.
+    # Generate a strong key: python -c "import secrets; print(secrets.token_hex(32))"
+    JWT_SECRET_KEY: str = Field(default="change-me-in-production")
+    JWT_ALGORITHM: str  = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    REFRESH_TOKEN_EXPIRE_DAYS: int   = 30
+
+    # ── Email (SMTP) ──────────────────────────────────────────────────────────
+    SMTP_HOST: str     = "smtp.gmail.com"
+    SMTP_PORT: int     = 587
+    SMTP_USER: str     = ""
+    SMTP_PASSWORD: str = ""
+    EMAIL_FROM: str    = "noreply@fuelguard.com"
+
+    # ── OTP ───────────────────────────────────────────────────────────────────
+    OTP_EXPIRE_MINUTES: int = 10
+
+    # ── AI (optional) ────────────────────────────────────────────────────────
+    OPENAI_API_KEY: str = ""
+
+    # ── Evidence retention ────────────────────────────────────────────────────
+    EVIDENCE_RETENTION_DAYS: int = 90
+
+    @field_validator("JWT_SECRET_KEY")
+    @classmethod
+    def jwt_secret_must_be_strong(cls, v: str) -> str:
+        # Hard validation deferred to validate_production_settings() at startup
+        return v
+
+    @property
+    def is_production(self) -> bool:
+        return self.APP_ENV == "production"
+
+    model_config = {"env_file": ".env", "extra": "ignore"}
+
+
+settings = Settings()
+
+
+def validate_production_settings() -> None:
+    """
+    Called at startup. Raises ValueError for any unsafe production config.
+    Safe to call in development — checks are gated on APP_ENV=production.
+    """
+    if not settings.is_production:
+        return
+
+    if settings.JWT_SECRET_KEY in ("change-me-in-production", "change-me", ""):
+        raise ValueError(
+            "JWT_SECRET_KEY must be set to a strong random value in production. "
+            "Run: python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
+    if len(settings.JWT_SECRET_KEY) < 32:
+        raise ValueError("JWT_SECRET_KEY must be at least 32 characters long in production.")
+    if not settings.FIREBASE_STORAGE_BUCKET:
+        raise ValueError("FIREBASE_STORAGE_BUCKET is required in production.")
+    if not settings.FIREBASE_PROJECT_ID:
+        raise ValueError("FIREBASE_PROJECT_ID is required in production.")
+    if not settings.SMTP_USER:
+        raise ValueError("SMTP_USER is required in production.")
