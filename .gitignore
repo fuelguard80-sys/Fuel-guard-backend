@@ -23,6 +23,7 @@ ENV/
 serviceAccountKey.json
 *serviceAccount*.json
 firebase-adminsdk*.json
+*firebase-adminsdk*.json
 
 # IDE
 .vscode/
