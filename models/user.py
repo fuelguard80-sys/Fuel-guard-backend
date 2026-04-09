@@ -32,7 +32,7 @@ class UserProfile(BaseModel):
     uid: str
     email: str
     full_name: str
-    phone: Optional[str] = None
+    phone: Optional[str]   = None
     role: UserRole
     avatar_url: Optional[str] = None
     is_active: bool = True
@@ -40,9 +40,9 @@ class UserProfile(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    full_name: Optional[str]   = None
-    phone: Optional[str]       = None
-    avatar_url: Optional[str]  = None
+    full_name: Optional[str]  = None
+    phone: Optional[str]      = None
+    avatar_url: Optional[str] = None
 
 
 class PasswordChange(BaseModel):
@@ -50,19 +50,19 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=8)
 
 
-class PasswordReset(BaseModel):
-    email: EmailStr
-    otp: str
-    new_password: str = Field(min_length=8)
-
-
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
 
-class OTPVerify(BaseModel):
-    email: EmailStr
-    otp: str
+class PasswordReset(BaseModel):
+    """
+    Used after the user resets their password via the Firebase Auth email link.
+    The Flutter app signs in with Firebase Auth to obtain a fresh ID token, then
+    calls /auth/reset-password so the backend can verify identity and sync the
+    bcrypt hash stored in Firestore.
+    """
+    firebase_id_token: str
+    new_password: str = Field(min_length=8)
 
 
 class RoleUpdate(BaseModel):

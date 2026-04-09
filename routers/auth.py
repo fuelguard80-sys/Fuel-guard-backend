@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
+import httpx
+from firebase_admin import auth as firebase_auth
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.dependencies import get_current_user
@@ -18,14 +21,21 @@ from models.user import (
     ChatbotMessage,
     ChatbotResponse,
     ForgotPasswordRequest,
-    OTPVerify,
+    PasswordChange,
     PasswordReset,
     RefreshTokenRequest,
     TokenResponse,
     UserCreate,
     UserLogin,
 )
-from services.auth_service import query_chatbot, send_otp_email, verify_stored_otp
+from services.auth_service import (
+    create_firebase_auth_user,
+    get_firebase_user_email,
+    query_chatbot,
+    send_firebase_password_reset,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -36,21 +46,34 @@ async def signup(payload: UserCreate):
 
     existing = db.collection(Collections.USERS).where("email", "==", payload.email).limit(1).get()
     if existing:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered",
+        )
 
     uid = str(uuid.uuid4())
     user_data = {
-        "uid": uid,
-        "email": payload.email,
-        "full_name": payload.full_name,
-        "phone": payload.phone,
-        "role": payload.role.value,
+        "uid":           uid,
+        "email":         payload.email,
+        "full_name":     payload.full_name,
+        "phone":         payload.phone,
+        "role":          payload.role.value,
         "password_hash": hash_password(payload.password),
-        "avatar_url": None,
-        "is_active": True,
-        "created_at": datetime.now(timezone.utc),
+        "avatar_url":    None,
+        "is_active":     True,
+        "email_verified": False,
+        "created_at":    datetime.now(timezone.utc),
     }
     db.collection(Collections.USERS).document(uid).set(user_data)
+
+    # Mirror the user into Firebase Auth so Firebase can send email-verification
+    # and password-reset emails on their behalf.  Failures are non-fatal.
+    create_firebase_auth_user(
+        uid=uid,
+        email=payload.email,
+        password=payload.password,
+        display_name=payload.full_name,
+    )
 
     token_payload = {"uid": uid, "role": payload.role.value}
     return TokenResponse(
@@ -67,12 +90,18 @@ async def login(payload: UserLogin):
 
     docs = db.collection(Collections.USERS).where("email", "==", payload.email).limit(1).get()
     if not docs:
-        # Same message for wrong email and wrong password — prevents user enumeration
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+        # Same message for wrong email and wrong password — prevents user enumeration.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
 
     user = docs[0].to_dict()
     if not verify_password(payload.password, user.get("password_hash", "")):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
 
     if not user.get("is_active", True):
         raise HTTPException(
@@ -125,44 +154,86 @@ async def refresh_token(payload: RefreshTokenRequest):
 
 @router.post("/forgot-password", status_code=status.HTTP_200_OK)
 async def forgot_password(payload: ForgotPasswordRequest):
-    db = get_db()
+    """
+    Trigger a Firebase Auth password-reset email.
+
+    Firebase delivers the email through Google's mail infrastructure — no SMTP
+    is required.  The response is always identical regardless of whether the
+    email is registered, preventing user-enumeration attacks.
+    """
+    db   = get_db()
     docs = db.collection(Collections.USERS).where("email", "==", payload.email).limit(1).get()
 
-    # Always return the same response regardless of whether the email exists.
-    # Revealing which emails are registered is a user-enumeration vulnerability.
     if docs:
-        await send_otp_email(payload.email, db)
+        try:
+            await send_firebase_password_reset(payload.email)
+        except httpx.HTTPStatusError as exc:
+            # EMAIL_NOT_FOUND means the user exists in Firestore but not yet in
+            # Firebase Auth (e.g. created before this feature was deployed).
+            # In that case, silently skip — do not leak the account's existence.
+            error_body = exc.response.json() if exc.response.content else {}
+            firebase_error = error_body.get("error", {}).get("message", "")
+            if firebase_error != "EMAIL_NOT_FOUND":
+                logger.error(
+                    "Firebase password-reset failed for %s: %s",
+                    payload.email,
+                    firebase_error,
+                )
+        except Exception:
+            logger.exception("Unexpected error sending Firebase password-reset for %s", payload.email)
 
-    return {"message": "If that email is registered, an OTP has been sent"}
-
-
-@router.post("/verify-otp", status_code=status.HTTP_200_OK)
-async def verify_otp(payload: OTPVerify):
-    db = get_db()
-    if not verify_stored_otp(db, payload.email, payload.otp):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP")
-    return {"message": "OTP verified", "email": payload.email}
+    return {"message": "If that email is registered, a password reset link has been sent"}
 
 
 @router.post("/reset-password", status_code=status.HTTP_200_OK)
 async def reset_password(payload: PasswordReset):
-    db = get_db()
+    """
+    Sync a Firebase Auth password reset back to Firestore.
 
-    if not verify_stored_otp(db, payload.email, payload.otp):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP")
+    Flow (mobile):
+      1. User taps "Forgot password" → Firebase sends a reset-link email.
+      2. User opens the link → Firebase's hosted UI → sets a new password.
+      3. App signs the user in with Firebase Auth using the new password.
+      4. App calls this endpoint with the resulting Firebase ID token and the
+         new password so the backend can verify identity and update the bcrypt
+         hash stored in Firestore.
 
-    docs = db.collection(Collections.USERS).where("email", "==", payload.email).limit(1).get()
+    The Firebase ID token is verified server-side using the Admin SDK — the
+    client cannot forge or tamper with it.
+    """
+    try:
+        email = get_firebase_user_email(payload.firebase_id_token)
+    except firebase_auth.InvalidIdTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired Firebase ID token",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+
+    db   = get_db()
+    docs = db.collection(Collections.USERS).where("email", "==", email).limit(1).get()
     if not docs:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    uid = docs[0].to_dict()["uid"]
-    db.collection(Collections.USERS).document(uid).update(
+    user = docs[0].to_dict()
+    db.collection(Collections.USERS).document(user["uid"]).update(
         {"password_hash": hash_password(payload.new_password)}
     )
-    # Invalidate OTP immediately after a successful reset
-    db.collection(Collections.OTP_STORE).document(payload.email).delete()
 
-    return {"message": "Password reset successfully"}
+    # Return fresh tokens so the user is immediately logged in after resetting.
+    token_payload = {"uid": user["uid"], "role": user["role"]}
+    return {
+        "message":       "Password reset successfully",
+        "access_token":  create_access_token(token_payload),
+        "refresh_token": create_refresh_token(token_payload),
+        "uid":           user["uid"],
+        "role":          user["role"],
+        "token_type":    "bearer",
+    }
 
 
 @router.post("/chatbot", response_model=ChatbotResponse)

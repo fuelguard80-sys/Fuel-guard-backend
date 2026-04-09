@@ -1,82 +1,82 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, timedelta
 
 import httpx
+from firebase_admin import auth as firebase_auth
 
 from core.config import settings
-from core.firebase import Collections
-from core.security import generate_otp, verify_otp_value
-from utils.email import send_email
 
 logger = logging.getLogger(__name__)
 
 
-async def send_otp_email(email: str, db) -> None:
+async def send_firebase_password_reset(email: str) -> None:
     """
-    Generate a cryptographically secure OTP, persist it with an expiry,
-    and dispatch it via email.
+    Trigger a Firebase Auth password-reset email via the Identity Toolkit REST API.
+
+    Firebase delivers the email through Google's own mail infrastructure — no SMTP
+    configuration is required.  The resulting link is hosted by Firebase and can be
+    customised in the Firebase Console (Authentication → Templates).
+
+    Raises httpx.HTTPStatusError if Firebase returns a non-2xx response.
     """
-    otp = generate_otp()
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
+    url = (
+        "https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode"
+        f"?key={settings.FIREBASE_API_KEY}"
+    )
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(url, json={
+            "requestType": "PASSWORD_RESET",
+            "email": email,
+        })
+        response.raise_for_status()
 
-    db.collection(Collections.OTP_STORE).document(email).set({
-        "otp": otp,
-        "expires_at": expires_at,
-        "email": email,
-    })
 
-    subject = "Fuel Guard — OTP Verification"
-    body = f"""
-    <div style="font-family: sans-serif; max-width: 480px; margin: auto;">
-      <h2 style="color: #1C2536;">Fuel Guard Password Reset</h2>
-      <p>Use the following one-time code to reset your password:</p>
-      <div style="font-size: 32px; font-weight: bold; letter-spacing: 8px;
-                  text-align: center; padding: 16px 0; color: #1C2536;">
-        {otp}
-      </div>
-      <p style="color: #637381; font-size: 13px;">
-        This code expires in <strong>{settings.OTP_EXPIRE_MINUTES} minutes</strong>.<br>
-        If you did not request a password reset, you can safely ignore this email.
-      </p>
-    </div>
+def create_firebase_auth_user(
+    uid: str,
+    email: str,
+    password: str,
+    display_name: str,
+) -> None:
     """
-    await send_email(to=email, subject=subject, html_body=body)
+    Mirror a new Firestore user into Firebase Auth so that Firebase can send
+    email-verification and password-reset emails on behalf of the account.
 
-
-def verify_stored_otp(db, email: str, otp: str) -> bool:
+    Errors are logged but do not propagate — a Firebase Auth failure must never
+    prevent a successful signup from completing.
     """
-    Validate an OTP against the stored record.
-
-    - Uses constant-time comparison (secrets.compare_digest) to prevent
-      timing side-channel attacks.
-    - Rejects expired OTPs using proper UTC-aware comparison.
-    """
-    doc = db.collection(Collections.OTP_STORE).document(email).get()
-    if not doc.exists:
-        return False
-
-    data = doc.to_dict()
-    stored_otp: str = data.get("otp", "")
-
-    # Constant-time comparison — prevents timing attacks
-    if not verify_otp_value(stored_otp, otp):
-        return False
-
-    expires_at: datetime | None = data.get("expires_at")
-    if expires_at is not None:
-        now = datetime.now(timezone.utc)
-        # Normalise to UTC-aware before comparing
-        exp_aware = (
-            expires_at.replace(tzinfo=timezone.utc)
-            if expires_at.tzinfo is None
-            else expires_at.astimezone(timezone.utc)
+    try:
+        firebase_auth.create_user(
+            uid=uid,
+            email=email,
+            password=password,
+            display_name=display_name,
+            email_verified=False,
         )
-        if now > exp_aware:
-            return False
+    except firebase_auth.EmailAlreadyExistsError:
+        logger.warning("Firebase Auth user already exists for %s — skipping creation.", email)
+    except Exception:
+        logger.exception(
+            "Failed to create Firebase Auth user for uid=%s email=%s. "
+            "The Firestore user was created successfully; Firebase Auth can be "
+            "synced later.",
+            uid,
+            email,
+        )
 
-    return True
+
+def get_firebase_user_email(firebase_id_token: str) -> str:
+    """
+    Verify a Firebase ID token and return the email address it belongs to.
+
+    Raises firebase_admin.auth.InvalidIdTokenError (or a subclass) if the token
+    is invalid, expired, or was issued for a different Firebase project.
+    """
+    decoded = firebase_auth.verify_id_token(firebase_id_token)
+    email: str | None = decoded.get("email")
+    if not email:
+        raise ValueError("Firebase ID token does not contain an email claim.")
+    return email
 
 
 async def query_chatbot(message: str, user: dict) -> str:
@@ -101,7 +101,7 @@ async def query_chatbot(message: str, user: dict) -> str:
         "model": "gpt-4o-mini",
         "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": message},
+            {"role": "user",   "content": message},
         ],
         "max_tokens": 500,
         "temperature": 0.4,
