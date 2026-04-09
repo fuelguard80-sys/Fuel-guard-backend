@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from typing import List
 
 from pydantic import Field, field_validator
+
+logger = logging.getLogger(__name__)
 from pydantic_settings import BaseSettings
 
 
@@ -85,4 +88,7 @@ def validate_production_settings() -> None:
     if not settings.FIREBASE_PROJECT_ID:
         raise ValueError("FIREBASE_PROJECT_ID is required in production.")
     if not settings.SMTP_USER:
-        raise ValueError("SMTP_USER is required in production.")
+        logger.warning(
+            "SMTP_USER is not set — email features (SMTP) will be unavailable. "
+            "Password reset uses Firebase Auth and does not require SMTP."
+        )

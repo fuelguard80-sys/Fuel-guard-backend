@@ -1,21 +1,35 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from __future__ import annotations
+
+import logging
 from contextlib import asynccontextmanager
 
-from core.config import settings
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from core.config import settings, validate_production_settings
 from core.firebase import init_firebase
 from routers import (
-    auth, users, nozzles, sessions, transactions,
-    reports, evidence, fraud, stations, prices,
-    admin, fleet, iot,
+    admin, auth, evidence, fleet, fraud, iot,
+    nozzles, prices, reports, sessions, stations,
+    transactions, users,
 )
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    settings.validate_production_settings()
+    logger.info("Starting up Fuel Guard API (env=%s)", settings.APP_ENV)
+    validate_production_settings()
+    logger.info("Production settings validated")
     init_firebase()
+    logger.info("Firebase initialised — ready to serve")
     yield
+    logger.info("Shutting down Fuel Guard API")
 
 
 app = FastAPI(
