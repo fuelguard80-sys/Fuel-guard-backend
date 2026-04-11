@@ -86,10 +86,15 @@ async def my_transactions(
     docs = (
         db.collection(Collections.TRANSACTIONS)
         .where("user_id", "==", current_user["uid"])
-        .order_by("created_at", direction="DESCENDING")
         .get()
     )
-    items = [{"id": d.id, **d.to_dict()} for d in docs]
+    # Sort in Python — avoids requiring a Firestore composite index on
+    # (user_id, created_at) which may not be deployed yet.
+    items = sorted(
+        [{"id": d.id, **d.to_dict()} for d in docs],
+        key=lambda x: x.get("created_at") or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
     return {"total": len(items), "items": items[offset: offset + limit]}
 
 
