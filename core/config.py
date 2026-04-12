@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     FIREBASE_CREDENTIALS_PATH: str = "serviceAccountKey.json"
     FIREBASE_PROJECT_ID: str   = "fuelguard-f3112"
     FIREBASE_STORAGE_BUCKET: str = "fuelguard-f3112.firebasestorage.app"
+    # Web API key — used only for the Identity Toolkit REST API (password-reset email).
+    # Find it in: Firebase Console → Project Settings → General → Web API Key
+    FIREBASE_API_KEY: str = ""
 
     # ── JWT ───────────────────────────────────────────────────────────────────
     # MUST be overridden in production via environment variable.
@@ -91,4 +94,9 @@ def validate_production_settings() -> None:
         logger.warning(
             "SMTP_USER is not set — email features (SMTP) will be unavailable. "
             "Password reset uses Firebase Auth and does not require SMTP."
+        )
+    if not settings.FIREBASE_API_KEY:
+        logger.warning(
+            "FIREBASE_API_KEY is not set — the forgot-password endpoint will fail at runtime. "
+            "Find it in: Firebase Console → Project Settings → General → Web API Key."
         )
