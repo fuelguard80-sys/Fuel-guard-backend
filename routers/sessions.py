@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from core.dependencies import get_current_user, require_admin
 from core.firebase import Collections, ensure_utc, get_db
 from models.session import (
+    DeviceSessionRequest,
     QRGenerateRequest,
     QRGenerateResponse,
     QRScanRequest,
@@ -114,6 +115,54 @@ async def scan_qr(payload: QRScanRequest, current_user: dict = Depends(get_curre
         )
 
     return {"session_id": session_id, "status": "active", "nozzle_id": session["nozzle_id"]}
+
+
+@router.post("/start", status_code=status.HTTP_200_OK)
+async def start_device_session(
+    payload: DeviceSessionRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Device-initiated session — used when the app connects to the ESP32 via
+    WiFi QR and queries /info for the nozzle_id instead of scanning a
+    backend-generated QR code.
+    """
+    db = get_db()
+
+    nozzle_doc = db.collection(Collections.NOZZLES).document(payload.nozzle_id).get()
+    if not nozzle_doc.exists:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nozzle not found")
+
+    # If an active session already exists for this nozzle, reuse it.
+    existing = (
+        db.collection(Collections.SESSIONS)
+        .where("nozzle_id", "==", payload.nozzle_id)
+        .where("status", "==", "active")
+        .limit(1)
+        .get()
+    )
+    if existing:
+        s = existing[0].to_dict()
+        return {"session_id": s["id"], "nozzle_id": payload.nozzle_id, "status": "active"}
+
+    session_id = str(uuid.uuid4())
+    now        = datetime.now(timezone.utc)
+    session_doc = {
+        "id":             session_id,
+        "nozzle_id":      payload.nozzle_id,
+        "user_id":        current_user["uid"],
+        "status":         "active",
+        "qr_data":        None,
+        "started_at":     now,
+        "ended_at":       None,
+        "expires_at":     None,
+        "total_litres":   0.0,
+        "total_amount":   0.0,
+        "transaction_id": None,
+        "created_at":     now,
+    }
+    db.collection(Collections.SESSIONS).document(session_id).set(session_doc)
+    return {"session_id": session_id, "nozzle_id": payload.nozzle_id, "status": "active"}
 
 
 @router.get("/active")

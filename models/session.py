@@ -50,3 +50,9 @@ class SessionResponse(BaseModel):
 
 class SessionCloseRequest(BaseModel):
     reason: Optional[str] = "manual"
+
+
+class DeviceSessionRequest(BaseModel):
+    """Used when the app initiates a session directly from the ESP32 device
+    (WiFi QR flow) rather than scanning a backend-generated QR code."""
+    nozzle_id: str
