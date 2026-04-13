@@ -6,13 +6,12 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import firebase_admin
-from firebase_admin import auth, credentials, firestore, storage
+from firebase_admin import auth, credentials, firestore
 from google.cloud.firestore_v1 import Increment  # noqa: F401 — re-exported for routers
 
 from core.config import settings
 
 _db: Optional[firestore.Client] = None
-_bucket = None
 
 
 def _load_credentials() -> credentials.Certificate:
@@ -47,27 +46,17 @@ def _load_credentials() -> credentials.Certificate:
 
 
 def init_firebase() -> None:
-    global _db, _bucket
+    global _db
     if not firebase_admin._apps:
         cred = _load_credentials()
-        firebase_admin.initialize_app(
-            cred,
-            {"storageBucket": settings.FIREBASE_STORAGE_BUCKET},
-        )
-    _db     = firestore.client()
-    _bucket = storage.bucket()
+        firebase_admin.initialize_app(cred)
+    _db = firestore.client()
 
 
 def get_db() -> firestore.Client:
     if _db is None:
         raise RuntimeError("Firebase not initialised — call init_firebase() at startup.")
     return _db
-
-
-def get_bucket():
-    if _bucket is None:
-        raise RuntimeError("Firebase not initialised — call init_firebase() at startup.")
-    return _bucket
 
 
 def get_auth():

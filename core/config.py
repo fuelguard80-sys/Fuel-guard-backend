@@ -25,8 +25,7 @@ class Settings(BaseSettings):
     # For local dev: path to serviceAccountKey.json
     # For Railway/production: set FIREBASE_CREDENTIALS_JSON instead (see firebase.py)
     FIREBASE_CREDENTIALS_PATH: str = "serviceAccountKey.json"
-    FIREBASE_PROJECT_ID: str   = "fuelguard-f3112"
-    FIREBASE_STORAGE_BUCKET: str = "fuelguard-f3112.firebasestorage.app"
+    FIREBASE_PROJECT_ID: str = "fuelguard-f3112"
     # Web API key — used only for the Identity Toolkit REST API (password-reset email).
     # Find it in: Firebase Console → Project Settings → General → Web API Key
     FIREBASE_API_KEY: str = ""
@@ -51,6 +50,11 @@ class Settings(BaseSettings):
 
     # ── AI (optional) ────────────────────────────────────────────────────────
     OPENAI_API_KEY: str = ""
+
+    # ── Cloudinary (evidence photo storage) ──────────────────────────────────
+    CLOUDINARY_CLOUD_NAME: str = ""
+    CLOUDINARY_API_KEY: str    = ""
+    CLOUDINARY_API_SECRET: str = ""
 
     # ── Evidence retention ────────────────────────────────────────────────────
     EVIDENCE_RETENTION_DAYS: int = 90
@@ -86,8 +90,6 @@ def validate_production_settings() -> None:
         )
     if len(settings.JWT_SECRET_KEY) < 32:
         raise ValueError("JWT_SECRET_KEY must be at least 32 characters long in production.")
-    if not settings.FIREBASE_STORAGE_BUCKET:
-        raise ValueError("FIREBASE_STORAGE_BUCKET is required in production.")
     if not settings.FIREBASE_PROJECT_ID:
         raise ValueError("FIREBASE_PROJECT_ID is required in production.")
     if not settings.SMTP_USER:

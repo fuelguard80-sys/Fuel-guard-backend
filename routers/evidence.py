@@ -3,13 +3,15 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone, timedelta
-from urllib.parse import urlparse
+from io import BytesIO
 
+import cloudinary
+import cloudinary.uploader
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 from core.config import settings
 from core.dependencies import get_current_user, require_admin
-from core.firebase import Collections, get_bucket, get_db
+from core.firebase import Collections, get_db
 from models.evidence import EvidenceResponse
 
 logger = logging.getLogger(__name__)
@@ -17,20 +19,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _blob_name_from_url(url: str, bucket_name: str) -> str | None:
-    """
-    Extract the GCS blob path from a public storage URL.
-    Uses urllib.parse — not string-splitting — for reliability.
-    """
-    try:
-        parsed   = urlparse(url)
-        # Public URL format: https://storage.googleapis.com/<bucket>/<blob>
-        prefix   = f"/{bucket_name}/"
-        if prefix in parsed.path:
-            return parsed.path.split(prefix, 1)[1]
-    except Exception:
-        pass
-    return None
+def _init_cloudinary() -> bool:
+    """Configure Cloudinary from settings. Returns False if credentials are missing."""
+    if not all([settings.CLOUDINARY_CLOUD_NAME, settings.CLOUDINARY_API_KEY, settings.CLOUDINARY_API_SECRET]):
+        logger.warning("Cloudinary credentials not configured — evidence upload will fail")
+        return False
+    cloudinary.config(
+        cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+        api_key=settings.CLOUDINARY_API_KEY,
+        api_secret=settings.CLOUDINARY_API_SECRET,
+        secure=True,
+    )
+    return True
 
 
 @router.post("", response_model=EvidenceResponse, status_code=status.HTTP_201_CREATED)
@@ -42,67 +42,67 @@ async def upload_evidence(
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),
 ):
-    db     = get_db()
-    bucket = get_bucket()
+    db = get_db()
 
     tx_doc = db.collection(Collections.TRANSACTIONS).document(transaction_id).get()
     if not tx_doc.exists:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
 
-    evidence_id = str(uuid.uuid4())
-    ext         = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "jpg"
-    blob_path   = f"evidence/{transaction_id}/{evidence_id}.{ext}"
-    thumb_path  = f"evidence/{transaction_id}/{evidence_id}_thumb.{ext}"
+    if not _init_cloudinary():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Evidence storage not configured",
+        )
 
+    evidence_id = str(uuid.uuid4())
     contents = await file.read()
 
-    blob = bucket.blob(blob_path)
-    blob.upload_from_string(contents, content_type=file.content_type or "image/jpeg")
-    blob.make_public()
-    image_url = blob.public_url
+    # ── Upload original to Cloudinary ─────────────────────────────────────────
+    public_id = f"fuelguard/evidence/{transaction_id}/{evidence_id}"
+    upload_result = cloudinary.uploader.upload(
+        BytesIO(contents),
+        public_id=public_id,
+        resource_type="image",
+        overwrite=False,
+        tags=[f"txn:{transaction_id}", f"nozzle:{nozzle_id}", capture_trigger],
+    )
+    image_url = upload_result["secure_url"]
 
-    # Generate thumbnail without crashing the upload if it fails
+    # ── Generate thumbnail URL via Cloudinary transformation (no extra upload) ─
     thumbnail_url: str | None = None
     try:
-        from io import BytesIO
-        from PIL import Image
-
-        img = Image.open(BytesIO(contents))
-        img.thumbnail((320, 320))
-        thumb_buf = BytesIO()
-        fmt       = ext.upper() if ext.upper() in ("PNG", "JPEG") else "JPEG"
-        img.save(thumb_buf, format=fmt)
-
-        thumb_blob = bucket.blob(thumb_path)
-        thumb_blob.upload_from_string(thumb_buf.getvalue(), content_type="image/jpeg")
-        thumb_blob.make_public()
-        thumbnail_url = thumb_blob.public_url
+        thumbnail_url = cloudinary.CloudinaryImage(public_id).build_url(
+            width=320, height=320, crop="limit", secure=True
+        )
     except Exception:
-        logger.exception("Thumbnail generation failed for evidence %s", evidence_id)
+        logger.exception("Thumbnail URL generation failed for evidence %s", evidence_id)
 
-    delete_at     = datetime.now(timezone.utc) + timedelta(days=settings.EVIDENCE_RETENTION_DAYS)
+    # ── Save metadata to Firestore ─────────────────────────────────────────────
+    delete_at = datetime.now(timezone.utc) + timedelta(days=settings.EVIDENCE_RETENTION_DAYS)
     watermark_txt = (
         f"TXN:{transaction_id} | "
         f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC"
     )
 
     doc_data = {
-        "id": evidence_id,
-        "transaction_id": transaction_id,
-        "nozzle_id": nozzle_id,
-        "session_id": session_id,
-        "image_url": image_url,
-        "thumbnail_url": thumbnail_url,
-        "file_size_kb": round(len(contents) / 1024, 2),
-        "capture_trigger": capture_trigger,
+        "id":               evidence_id,
+        "transaction_id":   transaction_id,
+        "nozzle_id":        nozzle_id,
+        "session_id":       session_id,
+        "image_url":        image_url,
+        "thumbnail_url":    thumbnail_url,
+        "file_size_kb":     round(len(contents) / 1024, 2),
+        "capture_trigger":  capture_trigger,
+        "cloudinary_public_id": public_id,
         "metadata": {
-            "uploaded_by": current_user["uid"],
+            "uploaded_by":       current_user["uid"],
             "original_filename": file.filename,
         },
         "watermark_text": watermark_txt,
-        "delete_at": delete_at,
-        "created_at": datetime.now(timezone.utc),
+        "delete_at":      delete_at,
+        "created_at":     datetime.now(timezone.utc),
     }
+
     db.collection(Collections.EVIDENCE).document(evidence_id).set(doc_data)
     db.collection(Collections.TRANSACTIONS).document(transaction_id).update(
         {"evidence_url": image_url}
@@ -116,14 +116,14 @@ async def get_evidence_for_transaction(
     transaction_id: str,
     _: dict = Depends(get_current_user),
 ):
-    db   = get_db()
+    db = get_db()
     docs = db.collection(Collections.EVIDENCE).where("transaction_id", "==", transaction_id).get()
     return [{"id": d.id, **d.to_dict()} for d in docs]
 
 
 @router.get("/{evidence_id}/image")
 async def get_evidence_image(evidence_id: str, _: dict = Depends(get_current_user)):
-    db  = get_db()
+    db = get_db()
     doc = db.collection(Collections.EVIDENCE).document(evidence_id).get()
     if not doc.exists:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evidence not found")
@@ -133,49 +133,41 @@ async def get_evidence_image(evidence_id: str, _: dict = Depends(get_current_use
 
 @router.delete("/{evidence_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_evidence(evidence_id: str, _: dict = Depends(require_admin)):
-    db     = get_db()
-    bucket = get_bucket()
-    doc    = db.collection(Collections.EVIDENCE).document(evidence_id).get()
+    db = get_db()
+    doc = db.collection(Collections.EVIDENCE).document(evidence_id).get()
     if not doc.exists:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evidence not found")
 
     data = doc.to_dict()
-    for url_key in ("image_url", "thumbnail_url"):
-        url = data.get(url_key)
-        if url:
-            blob_name = _blob_name_from_url(url, bucket.name)
-            if blob_name:
-                try:
-                    bucket.blob(blob_name).delete()
-                except Exception:
-                    logger.exception("Failed to delete blob %s from storage", blob_name)
+    public_id = data.get("cloudinary_public_id")
+
+    # Delete from Cloudinary
+    if public_id and _init_cloudinary():
+        try:
+            cloudinary.uploader.destroy(public_id, resource_type="image")
+        except Exception:
+            logger.exception("Failed to delete Cloudinary asset %s", public_id)
 
     db.collection(Collections.EVIDENCE).document(evidence_id).delete()
 
 
 @router.post("/auto-delete", status_code=status.HTTP_200_OK)
 async def auto_delete_expired_evidence():
-    """
-    Background job — enforces the evidence retention policy.
-    Should be triggered by a scheduler, not end-users.
-    """
-    db     = get_db()
-    bucket = get_bucket()
-    now    = datetime.now(timezone.utc)
-    docs   = db.collection(Collections.EVIDENCE).where("delete_at", "<=", now).get()
+    """Background job — enforces the evidence retention policy."""
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    docs = db.collection(Collections.EVIDENCE).where("delete_at", "<=", now).get()
 
+    cloudinary_ready = _init_cloudinary()
     deleted = 0
     for doc in docs:
         data = doc.to_dict()
-        for url_key in ("image_url", "thumbnail_url"):
-            url = data.get(url_key)
-            if url:
-                blob_name = _blob_name_from_url(url, bucket.name)
-                if blob_name:
-                    try:
-                        bucket.blob(blob_name).delete()
-                    except Exception:
-                        logger.exception("Storage delete failed for blob %s", blob_name)
+        public_id = data.get("cloudinary_public_id")
+        if public_id and cloudinary_ready:
+            try:
+                cloudinary.uploader.destroy(public_id, resource_type="image")
+            except Exception:
+                logger.exception("Cloudinary delete failed for %s", public_id)
         db.collection(Collections.EVIDENCE).document(doc.id).delete()
         deleted += 1
 
@@ -190,13 +182,13 @@ async def list_all_evidence(
     offset: int = Query(0, ge=0),
     _: dict = Depends(require_admin),
 ):
-    db    = get_db()
+    db = get_db()
     query = db.collection(Collections.EVIDENCE)
     if nozzle_id:
         query = query.where("nozzle_id", "==", nozzle_id)
     if capture_trigger:
         query = query.where("capture_trigger", "==", capture_trigger)
 
-    docs  = query.order_by("created_at", direction="DESCENDING").get()
+    docs = query.order_by("created_at", direction="DESCENDING").get()
     items = [{"id": d.id, **d.to_dict()} for d in docs]
     return {"total": len(items), "items": items[offset: offset + limit]}
