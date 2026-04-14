@@ -6,8 +6,12 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
+import cloudinary
+import cloudinary.uploader
+
+from core.config import settings
 from core.dependencies import require_admin
-from core.firebase import Collections, ensure_utc, get_bucket, get_db
+from core.firebase import Collections, ensure_utc, get_db
 from models.iot import (
     CameraCapture,
     DevicePing,
@@ -200,14 +204,31 @@ async def upload_firmware(
     file: UploadFile = File(...),
     _: dict = Depends(require_admin),
 ):
+    if not all([settings.CLOUDINARY_CLOUD_NAME, settings.CLOUDINARY_API_KEY, settings.CLOUDINARY_API_SECRET]):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Firmware storage not configured — set CLOUDINARY_* env vars.",
+        )
+
+    cloudinary.config(
+        cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+        api_key=settings.CLOUDINARY_API_KEY,
+        api_secret=settings.CLOUDINARY_API_SECRET,
+        secure=True,
+    )
+
     db       = get_db()
-    bucket   = get_bucket()
     contents = await file.read()
 
-    blob_path = f"firmware/{version}/{file.filename}"
-    blob      = bucket.blob(blob_path)
-    blob.upload_from_string(contents, content_type="application/octet-stream")
-    blob.make_public()
+    from io import BytesIO
+    public_id = f"fuelguard/firmware/{version}/{file.filename}"
+    upload_result = cloudinary.uploader.upload(
+        BytesIO(contents),
+        public_id=public_id,
+        resource_type="raw",
+        overwrite=False,
+    )
+    download_url = upload_result["secure_url"]
 
     fw_id = str(uuid.uuid4())
     data  = {
@@ -215,7 +236,7 @@ async def upload_firmware(
         "version": version,
         "release_notes": release_notes,
         "is_mandatory": is_mandatory,
-        "download_url": blob.public_url,
+        "download_url": download_url,
         "file_size_bytes": len(contents),
         "created_at": datetime.now(timezone.utc),
     }
