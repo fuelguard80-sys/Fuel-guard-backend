@@ -49,8 +49,7 @@ class Settings(BaseSettings):
     OTP_EXPIRE_MINUTES: int = 10
 
     # ── AI ────────────────────────────────────────────────────────────────────
-    OPENAI_API_KEY: str = ""   # legacy — no longer used
-    GEMINI_API_KEY: str = ""
+    GROQ_API_KEY: str = ""
 
     # ── Cloudinary (evidence photo storage) ──────────────────────────────────
     CLOUDINARY_CLOUD_NAME: str = ""

@@ -106,43 +106,36 @@ FuelGuard is a smart fuel management platform used in Pakistan. It connects IoT-
 
 
 async def query_chatbot(message: str, user: dict) -> str:
-    """Call Gemini Flash with a FuelGuard system prompt and return the reply."""
-    if not settings.GEMINI_API_KEY:
-        logger.warning("GEMINI_API_KEY not configured — chatbot unavailable.")
+    """Call Groq (llama-3.3-70b) with a FuelGuard system prompt and return the reply."""
+    if not settings.GROQ_API_KEY:
+        logger.warning("GROQ_API_KEY not configured — chatbot unavailable.")
         return "Support chat is not available at this time. Please contact us via email."
 
     payload = {
-        "contents": [
-            {"role": "user",  "parts": [{"text": _SYSTEM_PROMPT}]},
-            {"role": "model", "parts": [{"text": "Understood. I am the FuelGuard Support Assistant and will answer only FuelGuard-related questions briefly and clearly."}]},
-            {"role": "user",  "parts": [{"text": message}]},
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user",   "content": message},
         ],
-        "generationConfig": {
-            "temperature": 0.4,
-            "maxOutputTokens": 400,
-        },
+        "temperature": 0.4,
+        "max_tokens": 400,
     }
-
-    url = (
-        "https://generativelanguage.googleapis.com/v1/models/"
-        f"gemini-1.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
-    )
 
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.post(url, json=payload)
+            response = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
             if response.status_code != 200:
-                logger.error(
-                    "Gemini API returned %s: %s", response.status_code, response.text
-                )
+                logger.error("Groq API returned %s: %s", response.status_code, response.text)
                 return "I'm unable to process your request right now. Please try again in a moment."
-            data = response.json()
-            candidates = data.get("candidates", [])
-            if not candidates:
-                logger.error("Gemini returned no candidates: %s", data)
-                return "I'm unable to process your request right now. Please try again in a moment."
-            return candidates[0]["content"]["parts"][0]["text"].strip()
+            return response.json()["choices"][0]["message"]["content"].strip()
     except Exception:
-        logger.exception("Unexpected error querying Gemini chatbot")
+        logger.exception("Unexpected error querying Groq chatbot")
 
     return "I'm unable to process your request right now. Please try again in a moment."
