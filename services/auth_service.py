@@ -121,18 +121,24 @@ async def query_chatbot(message: str, user: dict) -> str:
     }
 
     url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.0-flash:generateContent?key={settings.GEMINI_API_KEY}"
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"gemini-1.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
     )
 
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             response = await client.post(url, json=payload)
-            response.raise_for_status()
+            if response.status_code != 200:
+                logger.error(
+                    "Gemini API returned %s: %s", response.status_code, response.text
+                )
+                return "I'm unable to process your request right now. Please try again in a moment."
             data = response.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-    except httpx.HTTPStatusError as exc:
-        logger.error("Gemini API returned %s: %s", exc.response.status_code, exc.response.text)
+            candidates = data.get("candidates", [])
+            if not candidates:
+                logger.error("Gemini returned no candidates: %s", data)
+                return "I'm unable to process your request right now. Please try again in a moment."
+            return candidates[0]["content"]["parts"][0]["text"].strip()
     except Exception:
         logger.exception("Unexpected error querying Gemini chatbot")
 
