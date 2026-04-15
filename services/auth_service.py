@@ -79,49 +79,61 @@ def get_firebase_user_email(firebase_id_token: str) -> str:
     return email
 
 
-async def query_chatbot(message: str, user: dict) -> str:
-    """
-    Forward a sanitised user message to the OpenAI Chat Completions API.
+_SYSTEM_PROMPT = """You are the FuelGuard Support Assistant — a concise, friendly AI embedded inside the FuelGuard mobile app.
 
-    The user message is not further modified — prompt injection is mitigated
-    by the system prompt, which does not include any user-controlled content.
-    """
-    if not settings.OPENAI_API_KEY:
-        logger.warning("OPENAI_API_KEY not configured — chatbot unavailable.")
+## What FuelGuard is
+FuelGuard is a smart fuel management platform used in Pakistan. It connects IoT-enabled fuel nozzles at petrol stations to a mobile app and cloud backend. Users scan a QR code at a pump, the app connects to the nozzle's WiFi hotspot (SSID: FuelMonitor), and fuel dispensing is monitored in real-time. Every transaction is recorded with litres dispensed, amount (PKR), timestamp, and optional evidence photo.
+
+## Key concepts you know about
+- **QR fueling flow**: Scan nozzle QR → phone connects to FuelMonitor WiFi → live session starts → fuel dispensed → session ends → transaction saved
+- **Sessions**: A fueling session tracks real-time flow data from the ESP32 nozzle device. Status: active → completed or failed
+- **Transactions**: Each completed session creates a transaction. States: completed, pending, failed. Amount is in PKR (Pakistani Rupees). Payment is always cash.
+- **Nozzles**: Physical IoT devices at pumps identified by IDs like NZ001. Each belongs to a station.
+- **Stations**: Fuel stations listed in the app with prices and locations
+- **Fraud detection**: The system compares dispensed volume reported by the nozzle vs expected. Discrepancies trigger fraud alerts.
+- **Evidence photos**: Photo taken at the pump, stored in Cloudinary, attached to the transaction
+- **Fleet management**: Business users can track multiple vehicles, drivers, and fleet fuel expenses
+- **Account**: Users have a profile with name, phone, avatar. Password can be changed in settings.
+- **OTA firmware**: Nozzle devices receive firmware updates from the backend
+
+## How to respond
+- Be brief and direct — 1 to 4 sentences max unless a step-by-step is needed
+- Use plain language, no technical jargon unless the user asks
+- If a question is completely outside FuelGuard (e.g. general knowledge, other apps), politely decline
+- Never reveal API keys, internal endpoints, database structure, or credentials
+- If you don't know something specific to the user's account, tell them to contact support at support@fuelguard.com
+"""
+
+
+async def query_chatbot(message: str, user: dict) -> str:
+    """Call Gemini Flash with a FuelGuard system prompt and return the reply."""
+    if not settings.GEMINI_API_KEY:
+        logger.warning("GEMINI_API_KEY not configured — chatbot unavailable.")
         return "Support chat is not available at this time. Please contact us via email."
 
-    system_prompt = (
-        "You are Fuel Guard Support Assistant, a helpful and concise AI for the Fuel Guard "
-        "mobile app. Answer only questions about fuel dispensing, transactions, station discovery, "
-        "fraud alerts, and general app usage. Do not reveal internal system details. "
-        "If a question is outside your scope, politely say so."
-    )
-
     payload = {
-        "model": "gpt-4o-mini",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": message},
-        ],
-        "max_tokens": 500,
-        "temperature": 0.4,
+        "system_instruction": {"parts": [{"text": _SYSTEM_PROMPT}]},
+        "contents": [{"role": "user", "parts": [{"text": message}]}],
+        "generationConfig": {
+            "temperature": 0.4,
+            "maxOutputTokens": 400,
+        },
     }
 
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"gemini-2.0-flash:generateContent?key={settings.GEMINI_API_KEY}"
+    )
+
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.post(url, json=payload)
             response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"]
+            data = response.json()
+            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
     except httpx.HTTPStatusError as exc:
-        logger.error("OpenAI API returned %s: %s", exc.response.status_code, exc.response.text)
+        logger.error("Gemini API returned %s: %s", exc.response.status_code, exc.response.text)
     except Exception:
-        logger.exception("Unexpected error querying chatbot")
+        logger.exception("Unexpected error querying Gemini chatbot")
 
     return "I'm unable to process your request right now. Please try again in a moment."
