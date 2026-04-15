@@ -112,8 +112,11 @@ async def query_chatbot(message: str, user: dict) -> str:
         return "Support chat is not available at this time. Please contact us via email."
 
     payload = {
-        "system_instruction": {"parts": [{"text": _SYSTEM_PROMPT}]},
-        "contents": [{"role": "user", "parts": [{"text": message}]}],
+        "contents": [
+            {"role": "user",  "parts": [{"text": _SYSTEM_PROMPT}]},
+            {"role": "model", "parts": [{"text": "Understood. I am the FuelGuard Support Assistant and will answer only FuelGuard-related questions briefly and clearly."}]},
+            {"role": "user",  "parts": [{"text": message}]},
+        ],
         "generationConfig": {
             "temperature": 0.4,
             "maxOutputTokens": 400,
