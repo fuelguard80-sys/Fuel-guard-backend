@@ -121,7 +121,7 @@ async def query_chatbot(message: str, user: dict) -> str:
     }
 
     url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
+        "https://generativelanguage.googleapis.com/v1/models/"
         f"gemini-1.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
     )
 
