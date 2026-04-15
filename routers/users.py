@@ -1,11 +1,20 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import logging
+import uuid
+from io import BytesIO
 
+import cloudinary
+import cloudinary.uploader
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+
+from core.config import settings
 from core.dependencies import get_current_user, require_admin
 from core.firebase import Collections, get_db
 from core.security import hash_password, verify_password
 from models.user import PasswordChange, RoleUpdate, StatusUpdate, UserProfile, UserUpdate
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -27,6 +36,51 @@ async def update_my_profile(
     db  = get_db()
     uid = current_user["uid"]
     db.collection(Collections.USERS).document(uid).update(updates)
+    updated = db.collection(Collections.USERS).document(uid).get().to_dict()
+    updated.pop("password_hash", None)
+    return UserProfile(**updated)
+
+
+@router.post("/me/avatar", response_model=UserProfile, status_code=status.HTTP_200_OK)
+async def upload_my_avatar(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    if not all([settings.CLOUDINARY_CLOUD_NAME, settings.CLOUDINARY_API_KEY, settings.CLOUDINARY_API_SECRET]):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Avatar storage not configured",
+        )
+
+    cloudinary.config(
+        cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+        api_key=settings.CLOUDINARY_API_KEY,
+        api_secret=settings.CLOUDINARY_API_SECRET,
+        secure=True,
+    )
+
+    uid = current_user["uid"]
+    contents = await file.read()
+
+    public_id = f"fuelguard/avatars/{uid}/{uuid.uuid4()}"
+    try:
+        result = cloudinary.uploader.upload(
+            BytesIO(contents),
+            public_id=public_id,
+            resource_type="image",
+            overwrite=True,
+            transformation=[{"width": 512, "height": 512, "crop": "fill", "gravity": "face"}],
+        )
+    except Exception:
+        logger.exception("Cloudinary avatar upload failed for user %s", uid)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to upload avatar — please try again",
+        )
+
+    avatar_url = result["secure_url"]
+    db = get_db()
+    db.collection(Collections.USERS).document(uid).update({"avatar_url": avatar_url})
     updated = db.collection(Collections.USERS).document(uid).get().to_dict()
     updated.pop("password_hash", None)
     return UserProfile(**updated)
