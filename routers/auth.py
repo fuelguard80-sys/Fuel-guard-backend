@@ -8,6 +8,7 @@ import httpx
 from firebase_admin import auth as firebase_auth
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from core.config import settings
 from core.dependencies import get_current_user
 from core.firebase import Collections, get_db
 from core.security import (
@@ -38,6 +39,28 @@ from services.auth_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+async def _verify_via_firebase(email: str, password: str) -> bool:
+    """
+    Verify email+password against Firebase Auth using the Identity Toolkit REST API.
+    Used as a fallback when the Firestore bcrypt hash is stale (e.g. after a
+    browser-based Firebase password reset that didn't sync back to Firestore).
+    Returns False instead of raising so the caller can return a clean 401.
+    """
+    if not settings.FIREBASE_API_KEY:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.post(
+                f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword"
+                f"?key={settings.FIREBASE_API_KEY}",
+                json={"email": email, "password": password, "returnSecureToken": False},
+            )
+            return resp.status_code == 200
+    except Exception:
+        logger.exception("Firebase fallback auth check failed for %s", email)
+        return False
 
 
 @router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -97,11 +120,23 @@ async def login(payload: UserLogin):
         )
 
     user = docs[0].to_dict()
+
     if not verify_password(payload.password, user.get("password_hash", "")):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+        # Bcrypt check failed — the user may have reset their password via the
+        # Firebase email link (browser flow), which updates Firebase Auth but
+        # not our Firestore hash. Try Firebase Auth as a fallback and, if it
+        # succeeds, self-heal the hash so future logins work normally.
+        firebase_verified = await _verify_via_firebase(payload.email, payload.password)
+        if not firebase_verified:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password",
+            )
+        # Sync the new hash into Firestore so we don't need Firebase next time.
+        db.collection(Collections.USERS).document(user["uid"]).update(
+            {"password_hash": hash_password(payload.password)}
         )
+        user["password_hash"] = hash_password(payload.password)
 
     if not user.get("is_active", True):
         raise HTTPException(
