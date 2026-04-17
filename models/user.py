@@ -32,10 +32,11 @@ class UserProfile(BaseModel):
     uid: str
     email: str
     full_name: str
-    phone: Optional[str]   = None
+    phone: Optional[str]    = None
     role: UserRole
-    avatar_url: Optional[str] = None
-    is_active: bool = True
+    avatar_url: Optional[str]  = None
+    is_active: bool         = True
+    email_verified: bool    = False
     created_at: Optional[datetime] = None
 
 
