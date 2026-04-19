@@ -1,0 +1,1546 @@
+\documentclass[12pt,a4paper]{article}
+
+% ── Packages ──────────────────────────────────────────────────────────────────
+\usepackage[a4paper, margin=2.2cm]{geometry}
+\usepackage{xcolor}
+\usepackage{tcolorbox}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{fontawesome5}
+\usepackage{parskip}
+\usepackage{microtype}
+\usepackage{lmodern}
+\usepackage[T1]{fontenc}
+\usepackage{listings}
+\usepackage{mdframed}
+
+\tcbuselibrary{skins, breakable}
+
+% ── Colours ───────────────────────────────────────────────────────────────────
+\definecolor{postgreen}{HTML}{49CC90}
+\definecolor{getblue}{HTML}{61AFFE}
+\definecolor{putorange}{HTML}{FCA130}
+\definecolor{deletered}{HTML}{F93E3E}
+\definecolor{patchpurple}{HTML}{50E3C2}
+\definecolor{bglight}{HTML}{F7F9FC}
+\definecolor{bordergray}{HTML}{CCCCCC}
+\definecolor{navydark}{HTML}{1A2B4A}
+\definecolor{textgray}{HTML}{4A4A4A}
+\definecolor{codered}{HTML}{E53935}
+\definecolor{tagbg}{HTML}{EEF2FF}
+\definecolor{tagfg}{HTML}{3730A3}
+\definecolor{reqbg}{HTML}{FFF8E1}
+\definecolor{resbg}{HTML}{E8F5E9}
+\definecolor{sectionline}{HTML}{2563EB}
+
+% ── Page style ────────────────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{navydark}\textbf{FuelGuard API} \textcolor{bordergray}{|} REST Reference}
+\fancyhead[R]{\small\color{textgray}v1 · /api/v1}
+\fancyfoot[C]{\small\color{textgray}\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{bordergray}\leaders\hrule height \headrulewidth\hfill}}
+
+% ── Section styling ───────────────────────────────────────────────────────────
+\titleformat{\section}[block]
+  {\Large\bfseries\color{navydark}}
+  {}
+  {0pt}
+  {\colorbox{navydark}{\parbox{\dimexpr\textwidth-2\fboxsep}{\color{white}\hspace{4pt}#1\hspace{4pt}}}\vspace{2pt}}
+
+\titleformat{\subsection}[block]
+  {\normalsize\bfseries\color{navydark}}
+  {}
+  {0pt}
+  {#1}
+\titlespacing{\subsection}{0pt}{10pt}{4pt}
+
+% ── HTTP method badges ────────────────────────────────────────────────────────
+\newcommand{\methodbadge}[2]{%
+  \tcbox[on line, arc=3pt, outer arc=3pt,
+    colback=#1, colframe=#1, colupper=white,
+    boxsep=1pt, left=4pt, right=4pt, top=2pt, bottom=2pt,
+    fontupper=\bfseries\small\sffamily]{#2}%
+}
+\newcommand{\GET}{\methodbadge{getblue}{GET}}
+\newcommand{\POST}{\methodbadge{postgreen}{POST}}
+\newcommand{\PUT}{\methodbadge{putorange}{PUT}}
+\newcommand{\DELETE}{\methodbadge{deletered}{DELETE}}
+\newcommand{\PATCH}{\methodbadge{patchpurple}{PATCH}}
+
+% ── Auth badge ────────────────────────────────────────────────────────────────
+\newcommand{\authrequired}{\tcbox[on line, arc=3pt,
+  colback=tagbg, colframe=tagfg, colupper=tagfg,
+  boxsep=1pt, left=3pt, right=3pt, top=1pt, bottom=1pt,
+  fontupper=\tiny\bfseries\sffamily]{🔒 AUTH}}
+
+\newcommand{\adminonly}{\tcbox[on line, arc=3pt,
+  colback=reqbg, colframe=putorange, colupper=putorange,
+  boxsep=1pt, left=3pt, right=3pt, top=1pt, bottom=1pt,
+  fontupper=\tiny\bfseries\sffamily]{ADMIN}}
+
+\newcommand{\noauth}{\tcbox[on line, arc=3pt,
+  colback=resbg, colframe=postgreen, colupper=postgreen,
+  boxsep=1pt, left=3pt, right=3pt, top=1pt, bottom=1pt,
+  fontupper=\tiny\bfseries\sffamily]{PUBLIC}}
+
+% ── Endpoint box ──────────────────────────────────────────────────────────────
+\newenvironment{endpoint}[4]{%
+  % #1=method cmd  #2=path  #3=auth badge  #4=description
+  \begin{tcolorbox}[
+    breakable,
+    colback=bglight,
+    colframe=bordergray,
+    arc=4pt,
+    left=8pt, right=8pt, top=6pt, bottom=6pt,
+    before skip=8pt, after skip=4pt,
+    title={\raisebox{-1pt}{#1}\hspace{6pt}\texttt{\textbf{#2}}\hspace{8pt}#3},
+    attach boxed title to top left={yshift=-2mm, xshift=4mm},
+    boxed title style={colback=white, colframe=white},
+    fonttitle=\normalsize
+  ]
+  \textcolor{textgray}{\small #4}\\[4pt]
+}{%
+  \end{tcolorbox}
+}
+
+% ── Request / Response tables ─────────────────────────────────────────────────
+\newcommand{\reqheader}{\vspace{2pt}\textbf{\small\color{putorange}Request}}
+\newcommand{\resheader}{\vspace{2pt}\textbf{\small\color{postgreen}Response}}
+
+\newcolumntype{F}{>{\ttfamily\small}l}
+\newcolumntype{T}{>{\small}l}
+\newcolumntype{D}{>{\small\raggedright\arraybackslash}X}
+
+\newcommand{\paramtable}[1]{%
+  \begin{tabularx}{\linewidth}{F T D}
+  \toprule
+  \normalfont\textbf{\small Field} & \normalfont\textbf{\small Type} & \normalfont\textbf{\small Notes} \\
+  \midrule
+  #1
+  \bottomrule
+  \end{tabularx}%
+}
+
+% ── Hyperref setup ────────────────────────────────────────────────────────────
+\hypersetup{
+  colorlinks=true,
+  linkcolor=sectionline,
+  urlcolor=sectionline,
+  pdftitle={FuelGuard API Reference},
+  pdfauthor={SR Development Team},
+}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\begin{document}
+% ══════════════════════════════════════════════════════════════════════════════
+
+% ── Title Page ────────────────────────────────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+  {\Huge\bfseries\color{navydark} FuelGuard\\[6pt]
+   \huge REST API Reference\par}
+  \vspace{0.5cm}
+  \textcolor{bordergray}{\rule{10cm}{0.4pt}}
+  \vspace{0.5cm}
+
+  {\large\color{textgray}
+    Backend: FastAPI · Python 3.11\\
+    Database: Cloud Firestore (Firebase)\\
+    Storage: Cloudinary\\
+    AI: Groq (llama-3.3-70b-versatile)
+  }
+
+  \vspace{1.5cm}
+  \begin{tcolorbox}[
+    colback=bglight, colframe=bordergray, arc=6pt,
+    width=10cm, halign=center
+  ]
+    \textbf{Base URL}\\[4pt]
+    \texttt{\small https://web-production-0cb0e.up.railway.app/api/v1}
+  \end{tcolorbox}
+
+  \vspace{1.5cm}
+  \begin{tcolorbox}[colback=tagbg, colframe=tagfg, arc=6pt, width=12cm]
+    \textbf{\color{tagfg}Authentication}\\[4pt]
+    \small All protected endpoints require a JWT Bearer token in the
+    \texttt{Authorization} header:\\[4pt]
+    \texttt{Authorization: Bearer \textless access\_token\textgreater}\\[4pt]
+    Tokens are obtained via \texttt{POST /auth/login} or \texttt{POST /auth/signup}.
+    Access tokens expire in \textbf{60 minutes}; use \texttt{POST /auth/refresh-token}
+    with a refresh token (valid 30 days) to obtain a new one.
+  \end{tcolorbox}
+
+  \vspace{1.5cm}
+  \begin{tabular}{ll}
+    \GET    & Read-only retrieval \\[4pt]
+    \POST   & Create or trigger action \\[4pt]
+    \PUT    & Full replacement update \\[4pt]
+    \PATCH  & Partial update \\[4pt]
+    \DELETE & Remove resource \\[8pt]
+    \authrequired & JWT token required \\[4pt]
+    \adminonly    & Admin/Super-Admin role required \\[4pt]
+    \noauth       & No authentication required \\
+  \end{tabular}
+
+  \vfill
+  {\small\color{textgray}SR Development Team · FuelGuard FYP · 2025}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Authentication  \normalfont\small\texttt{/api/v1/auth}}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{endpoint}{\POST}{/auth/signup}{\noauth}{
+  Registers a new user, creates their Firestore profile and mirrors the account into
+  Firebase Auth so email-verification and password-reset emails can be sent.
+}
+  \reqheader
+  \paramtable{
+    email        & string  & Valid email address \\
+    password     & string  & Minimum 8 characters \\
+    full\_name   & string  & Minimum 2 characters \\
+    phone        & string? & Optional; Pakistani format \\
+    role         & enum    & \texttt{customer | employee | admin | driver | super\_admin} \\
+  }
+  \resheader
+  \paramtable{
+    access\_token  & string & JWT; expires in 60 min \\
+    refresh\_token & string & JWT; expires in 30 days \\
+    token\_type    & string & Always \texttt{"bearer"} \\
+    uid            & string & Firestore user document ID \\
+    role           & string & Assigned role \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/auth/login}{\noauth}{
+  Authenticates a user with email and password. If the bcrypt hash is stale
+  (e.g.\ after a browser-based Firebase password reset), falls back to Firebase
+  Auth and self-heals the Firestore hash.
+}
+  \reqheader
+  \paramtable{
+    email    & string & Registered email \\
+    password & string & Account password \\
+  }
+  \resheader
+  \paramtable{
+    access\_token  & string & JWT access token \\
+    refresh\_token & string & JWT refresh token \\
+    token\_type    & string & \texttt{"bearer"} \\
+    uid            & string & User ID \\
+    role           & string & User role \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/auth/logout}{\authrequired}{
+  Stateless logout — the client discards its tokens. No server-side token
+  revocation is performed (add a Firestore denylist for full revocation).
+}
+  \reqheader\quad\textit{None (Auth header only)}\\[4pt]
+  \resheader
+  \paramtable{
+    message & string & \texttt{"Logged out successfully"} \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/auth/refresh-token}{\noauth}{
+  Exchanges a valid refresh token for a new access/refresh token pair without
+  requiring the user to log in again.
+}
+  \reqheader
+  \paramtable{
+    refresh\_token & string & Valid, non-expired refresh JWT \\
+  }
+  \resheader
+  \paramtable{
+    access\_token  & string & New JWT access token \\
+    refresh\_token & string & New JWT refresh token \\
+    uid            & string & User ID \\
+    role           & string & User role \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/auth/forgot-password}{\noauth}{
+  Triggers a Firebase Auth password-reset email to the given address. Always
+  returns the same message regardless of whether the email is registered,
+  preventing user-enumeration attacks.
+}
+  \reqheader
+  \paramtable{
+    email & string & Email to send the reset link to \\
+  }
+  \resheader
+  \paramtable{
+    message & string & Generic confirmation message \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/auth/reset-password}{\noauth}{
+  Syncs a Firebase-confirmed password reset back to Firestore by verifying the
+  Firebase ID token and updating the bcrypt hash, then returns fresh JWT tokens
+  so the user is immediately logged in.
+}
+  \reqheader
+  \paramtable{
+    firebase\_id\_token & string & Firebase ID token from \texttt{signInWithEmailAndPassword} \\
+    new\_password       & string & New password, minimum 8 characters \\
+  }
+  \resheader
+  \paramtable{
+    message        & string & Confirmation \\
+    access\_token  & string & JWT access token \\
+    refresh\_token & string & JWT refresh token \\
+    uid            & string & User ID \\
+    role           & string & User role \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/auth/chatbot}{\authrequired}{
+  Sends a user message to the FuelGuard AI support assistant powered by
+  Groq \texttt{llama-3.3-70b-versatile}; responds only to FuelGuard-related queries.
+}
+  \reqheader
+  \paramtable{
+    message & string & 1–1000 characters \\
+  }
+  \resheader
+  \paramtable{
+    reply & string & AI-generated response \\
+  }
+\end{endpoint}
+
+\newpage
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Users  \normalfont\small\texttt{/api/v1/users}}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{endpoint}{\GET}{/users/me}{\authrequired}{
+  Returns the full profile of the currently authenticated user, including
+  verification status and avatar URL.
+}
+  \reqheader\quad\textit{None}\\[4pt]
+  \resheader
+  \paramtable{
+    uid            & string  & Unique user ID \\
+    email          & string  & Email address \\
+    full\_name     & string  & Display name \\
+    phone          & string? & Phone number \\
+    role           & enum    & User role \\
+    avatar\_url    & string? & Cloudinary URL \\
+    is\_active     & bool    & Account status \\
+    email\_verified & bool   & Firebase email verification status \\
+    created\_at    & datetime & Registration timestamp \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\PUT}{/users/me}{\authrequired}{
+  Updates the authenticated user's editable profile fields. Only provided
+  fields are updated; omitted fields remain unchanged.
+}
+  \reqheader
+  \paramtable{
+    full\_name  & string? & New display name \\
+    phone       & string? & New phone number \\
+    avatar\_url & string? & Direct URL (use \texttt{POST /users/me/avatar} for uploads) \\
+  }
+  \resheader\quad\textit{Full \texttt{UserProfile} object (same as GET /users/me)}
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/users/me/avatar}{\authrequired}{
+  Uploads a profile picture as a multipart file, stores it on Cloudinary under
+  \texttt{fuelguard/avatars/\{uid\}/} with a 512×512 face-crop transform, and saves
+  the returned URL to Firestore.
+}
+  \reqheader
+  \paramtable{
+    file & image (multipart) & JPEG/PNG profile picture \\
+  }
+  \resheader\quad\textit{Full \texttt{UserProfile} object with updated \texttt{avatar\_url}}
+\end{endpoint}
+
+\begin{endpoint}{\PUT}{/users/me/password}{\authrequired}{
+  Changes the authenticated user's password after verifying the current one
+  against the Firestore bcrypt hash.
+}
+  \reqheader
+  \paramtable{
+    current\_password & string & Existing password \\
+    new\_password     & string & New password, minimum 8 characters \\
+  }
+  \resheader
+  \paramtable{
+    message & string & \texttt{"Password changed successfully"} \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/users}{\adminonly}{
+  Lists all registered users with optional filters. Results are paginated using
+  limit/offset and password hashes are stripped from every response.
+}
+  \reqheader\quad\textit{Query params:} \texttt{role}, \texttt{is\_active}, \texttt{limit} (max 200), \texttt{offset}\\[4pt]
+  \resheader
+  \paramtable{
+    total & int   & Total matching users \\
+    items & array & Array of user profile objects \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/users/\{user\_id\}}{\adminonly}{
+  Returns the full profile of any user by their Firestore document ID;
+  password hash is stripped from the response.
+}
+  \reqheader\quad\textit{Path param:} \texttt{user\_id}\\[4pt]
+  \resheader\quad\textit{User profile object}
+\end{endpoint}
+
+\begin{endpoint}{\PUT}{/users/\{user\_id\}/role}{\adminonly}{
+  Reassigns a user to a different role. Use with caution — role changes
+  take effect immediately on the next token refresh.
+}
+  \reqheader
+  \paramtable{
+    role & enum & \texttt{customer | employee | admin | driver | super\_admin} \\
+  }
+  \resheader
+  \paramtable{
+    message & string & Confirmation \\
+    role    & string & Newly assigned role \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\PATCH}{/users/\{user\_id\}/status}{\adminonly}{
+  Activates or deactivates a user account. Deactivated users receive a
+  403 on login until reactivated.
+}
+  \reqheader
+  \paramtable{
+    is\_active & bool & \texttt{true} to activate, \texttt{false} to deactivate \\
+  }
+  \resheader
+  \paramtable{
+    message   & string & Confirmation \\
+    is\_active & bool   & New status \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\DELETE}{/users/\{user\_id\}}{\adminonly}{
+  Permanently deletes a user from Firestore. Admins cannot delete their own
+  account; 204 is returned on success with no response body.
+}
+  \reqheader\quad\textit{Path param:} \texttt{user\_id}\\[4pt]
+  \resheader\quad\textit{204 No Content}
+\end{endpoint}
+
+\newpage
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Sessions  \normalfont\small\texttt{/api/v1/sessions}}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{endpoint}{\POST}{/sessions/generate-qr}{\adminonly}{
+  Generates a session QR code for a specific nozzle. The QR encodes a
+  signed session ID and has a configurable expiry (default 5 minutes).
+}
+  \reqheader
+  \paramtable{
+    nozzle\_id         & string & Target nozzle ID \\
+    expires\_in\_seconds & int  & Default 300 \\
+  }
+  \resheader
+  \paramtable{
+    session\_id       & string & New session ID \\
+    qr\_data          & string & Raw data encoded in the QR \\
+    qr\_image\_base64 & string & Base64 PNG of the QR image \\
+    expires\_at       & datetime & Expiry timestamp \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/sessions/scan}{\authrequired}{
+  Processes a scanned QR code and activates the corresponding session,
+  linking it to the authenticated user or a provided user ID.
+}
+  \reqheader
+  \paramtable{
+    qr\_data & string  & Raw QR payload from the scanner \\
+    user\_id & string? & Optional override for the linked user \\
+  }
+  \resheader
+  \paramtable{
+    session\_id & string & Activated session ID \\
+    status      & string & \texttt{"active"} \\
+    nozzle\_id  & string & Associated nozzle \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/sessions/start}{\authrequired}{
+  Device-initiated session start — called by the mobile app after connecting
+  to the nozzle's WiFi hotspot (SSID: FuelMonitor) via QR nozzle ID.
+}
+  \reqheader
+  \paramtable{
+    nozzle\_id & string & Nozzle to start the session on \\
+  }
+  \resheader
+  \paramtable{
+    session\_id & string & New session ID \\
+    nozzle\_id  & string & Confirmed nozzle ID \\
+    status      & string & \texttt{"active"} \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/sessions/active}{\adminonly}{
+  Returns all sessions currently in \texttt{active} status. Used by the admin
+  dashboard to monitor live fueling activity across all nozzles.
+}
+  \reqheader\quad\textit{None}\\[4pt]
+  \resheader\quad\textit{Array of session objects}
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/sessions/concurrent}{\adminonly}{
+  Checks how many concurrent sessions are running on a specific nozzle.
+  Used for fraud detection and capacity management.
+}
+  \reqheader\quad\textit{Query param:} \texttt{nozzle\_id}\\[4pt]
+  \resheader
+  \paramtable{
+    nozzle\_id        & string & Queried nozzle \\
+    concurrent\_count & int    & Number of active sessions \\
+    sessions          & array  & Session IDs \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/sessions/\{session\_id\}}{\authrequired}{
+  Returns full details of a session including status, timestamps,
+  total litres dispensed, total amount, and linked transaction ID.
+}
+  \reqheader\quad\textit{Path param:} \texttt{session\_id}\\[4pt]
+  \resheader
+  \paramtable{
+    id             & string   & Session ID \\
+    nozzle\_id     & string   & Nozzle ID \\
+    user\_id       & string   & Linked user \\
+    status         & enum     & \texttt{active | completed | failed | pending} \\
+    started\_at    & datetime & Start timestamp \\
+    ended\_at      & datetime? & End timestamp \\
+    total\_litres  & float    & Litres dispensed \\
+    total\_amount  & float    & Amount in PKR \\
+    transaction\_id & string? & Created transaction ID \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/sessions/\{session\_id\}/close}{\authrequired}{
+  Manually closes an active or pending session. Accepts an optional reason
+  string; defaults to \texttt{"manual"}.
+}
+  \reqheader
+  \paramtable{
+    reason & string? & Closure reason, default \texttt{"manual"} \\
+  }
+  \resheader
+  \paramtable{
+    message & string & Confirmation \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/sessions/timeout-check}{\noauth}{
+  Background job endpoint that auto-closes sessions that have exceeded
+  their expiry time without activity. Called by a scheduler.
+}
+  \reqheader\quad\textit{None}\\[4pt]
+  \resheader
+  \paramtable{
+    timed\_out\_sessions\_closed & int & Count of sessions closed \\
+  }
+\end{endpoint}
+
+\newpage
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Transactions  \normalfont\small\texttt{/api/v1/transactions}}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{endpoint}{\POST}{/transactions}{\authrequired}{
+  Records a completed fuel dispensing transaction with litres, price, and
+  payment method. Fraud detection runs asynchronously on the created record.
+}
+  \reqheader
+  \paramtable{
+    session\_id       & string  & Linked session \\
+    nozzle\_id        & string  & Nozzle used \\
+    user\_id          & string  & Customer \\
+    fuel\_type        & enum    & \texttt{petrol | diesel | cng | lpg} \\
+    litres\_dispensed & float   & Must be \textgreater 0 \\
+    price\_per\_litre & float   & PKR per litre \\
+    payment\_method   & enum    & \texttt{cash | card | wallet | qr\_pay} \\
+    vehicle\_id       & string? & Optional fleet vehicle \\
+    employee\_id      & string? & Optional serving employee \\
+  }
+  \resheader
+  \paramtable{
+    id               & string   & Transaction ID \\
+    total\_amount    & float    & \texttt{litres × price} in PKR \\
+    status           & enum     & \texttt{completed | pending | failed} \\
+    is\_flagged      & bool     & Fraud flag status \\
+    created\_at      & datetime & Timestamp \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/transactions/my}{\authrequired}{
+  Returns the authenticated user's own transaction history, paginated.
+  Includes completed, pending and failed records.
+}
+  \reqheader\quad\textit{Query params:} \texttt{limit} (max 100, default 20), \texttt{offset}\\[4pt]
+  \resheader
+  \paramtable{
+    total & int   & Total transactions for this user \\
+    items & array & Paginated transaction objects \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/transactions/\{transaction\_id\}}{\authrequired}{
+  Returns the full detail of a single transaction including receipt URL,
+  evidence URL, and fraud flag status.
+}
+  \reqheader\quad\textit{Path param:} \texttt{transaction\_id}\\[4pt]
+  \resheader\quad\textit{Full transaction object}
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/transactions/\{transaction\_id\}/receipt}{\authrequired}{
+  Generates and streams a PDF receipt for the transaction. Receipt includes
+  transaction details, station info, and a unique reference number.
+}
+  \reqheader\quad\textit{Path param:} \texttt{transaction\_id}\\[4pt]
+  \resheader\quad\textit{PDF file stream (\texttt{application/pdf})}
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/transactions}{\adminonly}{
+  Lists all transactions with optional filters. Results include fraud flags
+  and are paginated. Password fields are never returned.
+}
+  \reqheader\quad\textit{Query params:} \texttt{nozzle\_id}, \texttt{user\_id}, \texttt{station\_id}, \texttt{fuel\_type}, \texttt{limit}, \texttt{offset}\\[4pt]
+  \resheader
+  \paramtable{
+    total & int   & Total matching records \\
+    items & array & Transaction objects \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/transactions/\{transaction\_id\}/price-update}{\adminonly}{
+  Adjusts the price-per-litre of an existing transaction and recalculates
+  the total amount. The reason for the update is stored for audit.
+}
+  \reqheader
+  \paramtable{
+    price\_per\_litre & float   & New corrected price \\
+    reason            & string? & Audit note \\
+  }
+  \resheader
+  \paramtable{
+    message          & string & Confirmation \\
+    new\_total\_amount & float & Recalculated total in PKR \\
+  }
+\end{endpoint}
+
+\newpage
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Stations  \normalfont\small\texttt{/api/v1/stations}}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{endpoint}{\GET}{/stations/nearby}{\authrequired}{
+  Returns fuel stations within a given radius of the provided coordinates,
+  sorted by distance. Optionally filtered by fuel type.
+}
+  \reqheader\quad\textit{Query params:} \texttt{latitude}, \texttt{longitude}, \texttt{radius\_km} (default 10), \texttt{fuel\_type?}\\[4pt]
+  \resheader\quad\textit{Array of station objects with \texttt{distance\_km} field added}
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/stations/route}{\authrequired}{
+  Finds stations along a driving route by calculating a midpoint buffer
+  between origin and destination coordinates.
+}
+  \reqheader\quad\textit{Query params:} \texttt{origin\_lat}, \texttt{origin\_lng}, \texttt{dest\_lat}, \texttt{dest\_lng}, \texttt{fuel\_type?}\\[4pt]
+  \resheader\quad\textit{Array of stations with \texttt{distance\_from\_route\_km}}
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/stations/me/favorites}{\authrequired}{
+  Returns the authenticated user's list of favourite stations with
+  current prices and operating hours.
+}
+  \reqheader\quad\textit{None}\\[4pt]
+  \resheader\quad\textit{Array of station objects}
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/stations/me/favorites/\{station\_id\}}{\authrequired}{
+  Adds a station to the current user's favourites list in Firestore.
+  Duplicate additions are silently ignored.
+}
+  \reqheader\quad\textit{Path param:} \texttt{station\_id}\\[4pt]
+  \resheader
+  \paramtable{message & string & Confirmation}
+\end{endpoint}
+
+\begin{endpoint}{\DELETE}{/stations/me/favorites/\{station\_id\}}{\authrequired}{
+  Removes a station from the user's favourites list.
+  Returns 204 with no body on success.
+}
+  \reqheader\quad\textit{Path param:} \texttt{station\_id}\\[4pt]
+  \resheader\quad\textit{204 No Content}
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/stations}{\adminonly}{
+  Creates a new fuel station record with location, contact info, and
+  available fuel types. Station is active by default.
+}
+  \reqheader
+  \paramtable{
+    name                   & string  & Station display name \\
+    address                & string  & Full street address \\
+    city                   & string  & City \\
+    latitude               & float   & GPS latitude \\
+    longitude              & float   & GPS longitude \\
+    fuel\_types\_available & array   & e.g.\ \texttt{["petrol","diesel"]} \\
+    contact\_phone         & string? & Optional \\
+    manager\_uid           & string? & Optional manager user ID \\
+    operating\_hours       & string? & e.g.\ \texttt{"24/7"} \\
+  }
+  \resheader\quad\textit{Full station object with generated \texttt{id}}
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/stations/\{station\_id\}}{\authrequired}{
+  Returns a single station's full profile including current fuel prices
+  fetched live from the prices collection.
+}
+  \reqheader\quad\textit{Path param:} \texttt{station\_id}\\[4pt]
+  \resheader\quad\textit{Station object with \texttt{current\_prices} array}
+\end{endpoint}
+
+\begin{endpoint}{\PUT}{/stations/\{station\_id\}}{\adminonly}{
+  Updates any editable field of an existing station. Partial updates are
+  supported — only provided fields are overwritten.
+}
+  \reqheader\quad\textit{Any subset of station creation fields}\\[4pt]
+  \resheader\quad\textit{Updated station object}
+\end{endpoint}
+
+\begin{endpoint}{\DELETE}{/stations/\{station\_id\}}{\adminonly}{
+  Permanently removes a station from Firestore. Associated nozzles should
+  be reassigned or deleted beforehand. Returns 204 on success.
+}
+  \reqheader\quad\textit{Path param:} \texttt{station\_id}\\[4pt]
+  \resheader\quad\textit{204 No Content}
+\end{endpoint}
+
+\newpage
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Prices  \normalfont\small\texttt{/api/v1/prices}}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{endpoint}{\GET}{/prices/compare}{\authrequired}{
+  Compares the current price of a given fuel type across all stations,
+  optionally filtered to those within a radius of the user's location.
+}
+  \reqheader\quad\textit{Query params:} \texttt{fuel\_type} (required), \texttt{latitude?}, \texttt{longitude?}, \texttt{radius\_km} (default 20)\\[4pt]
+  \resheader
+  \paramtable{
+    station\_id      & string & Station ID \\
+    station\_name    & string & Station name \\
+    price\_per\_litre & float  & Current price in PKR \\
+    distance\_km     & float? & Distance if coords provided \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/prices/cheapest}{\authrequired}{
+  Finds the single cheapest station for a fuel type within the specified
+  radius. Returns full station info and distance for navigation.
+}
+  \reqheader\quad\textit{Query params:} \texttt{fuel\_type}, \texttt{latitude}, \texttt{longitude}, \texttt{radius\_km} (default 20)\\[4pt]
+  \resheader\quad\textit{Single station object with \texttt{price\_per\_litre} and \texttt{distance\_km}}
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/prices/alerts}{\authrequired}{
+  Lists all price-drop alerts the authenticated user has set up across
+  any station and fuel type combination.
+}
+  \reqheader\quad\textit{None}\\[4pt]
+  \resheader\quad\textit{Array of alert objects}
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/prices/alerts}{\authrequired}{
+  Creates a price alert that notifies the user when the price at a given
+  station drops below the specified target.
+}
+  \reqheader
+  \paramtable{
+    station\_id    & string & Target station \\
+    fuel\_type     & enum   & Fuel type to watch \\
+    target\_price  & float  & Alert threshold in PKR \\
+  }
+  \resheader
+  \paramtable{
+    id            & string   & Alert ID \\
+    target\_price & float    & Threshold \\
+    is\_active    & bool     & Active status \\
+    created\_at   & datetime & Creation timestamp \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\DELETE}{/prices/alerts/\{alert\_id\}}{\authrequired}{
+  Permanently removes a price alert. Returns 204 with no body.
+}
+  \reqheader\quad\textit{Path param:} \texttt{alert\_id}\\[4pt]
+  \resheader\quad\textit{204 No Content}
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/prices/\{station\_id\}/update}{\adminonly}{
+  Updates the current fuel price at a station. The previous price is
+  archived in the price history collection for trend analysis.
+}
+  \reqheader\quad\textit{Path param:} \texttt{station\_id} · \textit{Query params:} \texttt{fuel\_type}, \texttt{price\_per\_litre}\\[4pt]
+  \resheader
+  \paramtable{
+    message          & string & Confirmation \\
+    fuel\_type       & string & Updated fuel type \\
+    price\_per\_litre & float  & New price in PKR \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/prices/\{station\_id\}/history}{\authrequired}{
+  Returns the historical price records for a station, optionally filtered
+  by fuel type. Useful for trend charts.
+}
+  \reqheader\quad\textit{Path param:} \texttt{station\_id} · \textit{Query param:} \texttt{fuel\_type?}\\[4pt]
+  \resheader\quad\textit{Array of price history objects ordered by date}
+\end{endpoint}
+
+\newpage
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Nozzles  \normalfont\small\texttt{/api/v1/nozzles}}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{endpoint}{\GET}{/nozzles}{\authrequired}{
+  Lists all registered nozzles with optional filters for station, operational
+  status, and fuel type. Returns live readings alongside static config.
+}
+  \reqheader\quad\textit{Query params:} \texttt{station\_id?}, \texttt{status?}, \texttt{fuel\_type?}\\[4pt]
+  \resheader\quad\textit{Array of NozzleResponse objects}
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/nozzles}{\adminonly}{
+  Registers a new IoT nozzle device with its BLE identifiers, hardware serial,
+  and flow meter configuration. Status defaults to \texttt{idle}.
+}
+  \reqheader
+  \paramtable{
+    name              & string  & Nozzle display name \\
+    station\_id       & string  & Parent station \\
+    fuel\_type        & enum    & \texttt{petrol | diesel | cng | lpg} \\
+    ble\_uuid         & string  & Bluetooth LE UUID \\
+    ble\_device\_name & string  & BLE advertised name \\
+    hardware\_serial  & string  & Physical serial number \\
+    flow\_meter\_model & string? & Optional model name \\
+    max\_flow\_rate   & float   & L/min, default 60 \\
+  }
+  \resheader\quad\textit{Full NozzleResponse object with generated \texttt{id}}
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/nozzles/\{nozzle\_id\}}{\authrequired}{
+  Returns the full profile and live reading of a nozzle, including tamper
+  detection status, current flow rate, and last-seen timestamp.
+}
+  \reqheader\quad\textit{Path param:} \texttt{nozzle\_id}\\[4pt]
+  \resheader
+  \paramtable{
+    id                  & string   & Nozzle ID \\
+    status              & enum     & \texttt{idle | active | error | maintenance} \\
+    tamper\_detected    & bool     & Hardware tamper flag \\
+    current\_flow\_rate & float    & Current L/min \\
+    total\_litres\_today & float   & Today's dispensed total \\
+    last\_seen          & datetime & Last telemetry timestamp \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\PUT}{/nozzles/\{nozzle\_id\}}{\adminonly}{
+  Updates editable fields of a nozzle such as name, fuel type, flow meter
+  model, and max flow rate. Partial updates supported.
+}
+  \reqheader\quad\textit{Any subset of creation fields except \texttt{station\_id} and \texttt{ble\_uuid}}\\[4pt]
+  \resheader\quad\textit{Updated NozzleResponse object}
+\end{endpoint}
+
+\begin{endpoint}{\DELETE}{/nozzles/\{nozzle\_id\}}{\adminonly}{
+  Permanently deletes a nozzle record from Firestore. Ensure all active
+  sessions on this nozzle are closed before deletion.
+}
+  \reqheader\quad\textit{Path param:} \texttt{nozzle\_id}\\[4pt]
+  \resheader\quad\textit{204 No Content}
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/nozzles/\{nozzle\_id\}/readings}{\noauth}{
+  Accepts real-time flow meter readings pushed by the ESP32 device over WiFi.
+  Updates the nozzle's live telemetry in Firestore.
+}
+  \reqheader
+  \paramtable{
+    flow\_rate       & float & Current flow in L/min \\
+    total\_dispensed & float & Cumulative litres this session \\
+  }
+  \resheader
+  \paramtable{status & string & \texttt{"ok"}}
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/nozzles/\{nozzle\_id\}/tamper-alert}{\noauth}{
+  Reports a hardware tamper event from the IoT device. Creates a tamper
+  alert record and sets the nozzle's tamper flag to \texttt{true}.
+}
+  \reqheader
+  \paramtable{
+    alert\_type  & string  & Type of tamper event \\
+    description & string?  & Optional details \\
+    timestamp   & datetime? & Event time from device \\
+  }
+  \resheader
+  \paramtable{
+    alert\_id & string & Created alert ID \\
+    message   & string & Confirmation \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\PATCH}{/nozzles/alerts/\{alert\_id\}/resolve}{\adminonly}{
+  Marks a tamper alert as resolved and stores the resolution note for the
+  audit trail. Resets the nozzle's tamper flag.
+}
+  \reqheader
+  \paramtable{
+    resolution\_note & string & Notes on how the issue was addressed \\
+  }
+  \resheader
+  \paramtable{message & string & Confirmation}
+\end{endpoint}
+
+\newpage
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Evidence  \normalfont\small\texttt{/api/v1/evidence}}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{endpoint}{\POST}{/evidence}{\authrequired}{
+  Uploads a photo captured at the pump to Cloudinary and stores the URL in
+  the evidence collection. A thumbnail URL is generated automatically via
+  Cloudinary transformations. Evidence is auto-deleted after the retention period (90 days).
+}
+  \reqheader\quad\textit{Query params:} \texttt{transaction\_id}, \texttt{nozzle\_id}, \texttt{session\_id?}, \texttt{capture\_trigger} (default \texttt{"auto"}) · Body: \texttt{file} (multipart image)\\[4pt]
+  \resheader
+  \paramtable{
+    id              & string   & Evidence ID \\
+    image\_url      & string   & Full-size Cloudinary URL \\
+    thumbnail\_url  & string   & 320×320 thumbnail URL \\
+    watermark\_text & string   & Embedded transaction reference \\
+    delete\_at      & datetime & Auto-delete timestamp \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/evidence/\{transaction\_id\}}{\authrequired}{
+  Returns all evidence records linked to a transaction. A single transaction
+  may have multiple photos from different capture triggers.
+}
+  \reqheader\quad\textit{Path param:} \texttt{transaction\_id}\\[4pt]
+  \resheader\quad\textit{Array of evidence objects}
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/evidence/\{evidence\_id\}/image}{\authrequired}{
+  Returns both the full-size and thumbnail Cloudinary URLs for a specific
+  evidence record without returning the full metadata.
+}
+  \reqheader\quad\textit{Path param:} \texttt{evidence\_id}\\[4pt]
+  \resheader
+  \paramtable{
+    image\_url     & string  & Full-size image URL \\
+    thumbnail\_url & string? & Thumbnail URL \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\DELETE}{/evidence/\{evidence\_id\}}{\adminonly}{
+  Deletes the evidence from both Cloudinary and Firestore. Used for manual
+  removal before the automatic retention period expires.
+}
+  \reqheader\quad\textit{Path param:} \texttt{evidence\_id}\\[4pt]
+  \resheader\quad\textit{204 No Content}
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/evidence/auto-delete}{\noauth}{
+  Background job that enforces the retention policy by deleting all evidence
+  records whose \texttt{delete\_at} timestamp has passed from both Cloudinary and Firestore.
+}
+  \reqheader\quad\textit{None}\\[4pt]
+  \resheader
+  \paramtable{deleted\_count & int & Number of records deleted}
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/evidence}{\adminonly}{
+  Lists all evidence with optional filters by nozzle or capture trigger.
+  Results are paginated and ordered by creation date descending.
+}
+  \reqheader\quad\textit{Query params:} \texttt{nozzle\_id?}, \texttt{capture\_trigger?}, \texttt{limit} (max 200), \texttt{offset}\\[4pt]
+  \resheader
+  \paramtable{
+    total & int   & Total matching records \\
+    items & array & Evidence objects \\
+  }
+\end{endpoint}
+
+\newpage
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Fraud Detection  \normalfont\small\texttt{/api/v1/fraud}}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{endpoint}{\GET}{/fraud/alerts}{\adminonly}{
+  Lists fraud alerts with filters for type, status, and severity. All alerts
+  are paginated and include the associated transaction and nozzle IDs.
+}
+  \reqheader\quad\textit{Query params:} \texttt{alert\_type?}, \texttt{status?}, \texttt{severity?}, \texttt{limit}, \texttt{offset}\\[4pt]
+  \resheader
+  \paramtable{
+    total & int   & Total matching alerts \\
+    items & array & Fraud alert objects \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/fraud/alerts/\{alert\_id\}/resolve}{\adminonly}{
+  Resolves an open fraud alert by recording the resolution status and an
+  explanatory note. Resolved alerts are retained for audit history.
+}
+  \reqheader
+  \paramtable{
+    status          & enum   & \texttt{resolved | dismissed | escalated} \\
+    resolution\_note & string & Explanation of resolution \\
+  }
+  \resheader
+  \paramtable{message & string & Confirmation}
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/fraud/analyze}{\adminonly}{
+  Runs the fraud analysis pipeline on a specific transaction and generates
+  any alerts triggered by flow discrepancies or anomalous patterns.
+}
+  \reqheader\quad\textit{Query param:} \texttt{transaction\_id}\\[4pt]
+  \resheader
+  \paramtable{
+    transaction\_id    & string & Analyzed transaction \\
+    alerts\_generated  & int    & Number of new alerts \\
+    alerts             & array  & Generated alert objects \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/fraud/stats}{\adminonly}{
+  Returns aggregated fraud statistics including open alert count, alerts
+  resolved this week, and breakdowns by type and severity.
+}
+  \reqheader\quad\textit{None}\\[4pt]
+  \resheader
+  \paramtable{
+    total\_alerts        & int  & All-time alert count \\
+    open\_alerts         & int  & Currently open \\
+    resolved\_this\_week & int  & Resolved in the last 7 days \\
+    by\_type            & dict & Alert counts by type \\
+    by\_severity        & dict & Alert counts by severity \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/fraud/blacklist}{\adminonly}{
+  Adds a user, vehicle, or device entity to the fraud blacklist with a reason.
+  Blacklisted entities are flagged on future transactions automatically.
+}
+  \reqheader
+  \paramtable{
+    entity\_type & enum   & \texttt{user | vehicle | device} \\
+    entity\_id   & string & ID of the entity to blacklist \\
+    reason       & string & Reason for blacklisting \\
+    flagged\_by  & string? & Optional admin user ID \\
+  }
+  \resheader\quad\textit{Blacklist entry object with generated \texttt{id}}
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/fraud/flag}{\authrequired}{
+  Manually flags a transaction as suspicious with a custom reason and severity.
+  Creates a fraud alert that appears in the admin dashboard.
+}
+  \reqheader
+  \paramtable{
+    transaction\_id & string & Transaction to flag \\
+    reason          & string & Description of suspicion \\
+    severity        & enum   & \texttt{low | medium | high | critical}, default \texttt{medium} \\
+  }
+  \resheader
+  \paramtable{
+    alert\_id & string & Created alert ID \\
+    message   & string & Confirmation \\
+  }
+\end{endpoint}
+
+\newpage
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Fleet Management  \normalfont\small\texttt{/api/v1/fleet}}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{endpoint}{\GET}{/fleet/vehicles}{\authrequired}{
+  Lists vehicles owned by the current user. Admins see all vehicles.
+  Includes total fuel consumed and total expense aggregates.
+}
+  \reqheader\quad\textit{None}\\[4pt]
+  \resheader\quad\textit{Array of vehicle objects}
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/fleet/vehicles}{\authrequired}{
+  Registers a new fleet vehicle with its registration details, fuel type,
+  and tank capacity. Optionally assigns an owner user ID.
+}
+  \reqheader
+  \paramtable{
+    registration\_number & string  & Unique plate number \\
+    make                 & string  & Manufacturer \\
+    model                & string  & Model name \\
+    year                 & int     & Model year \\
+    fuel\_type           & enum    & Fuel type \\
+    tank\_capacity       & float   & Tank size in litres \\
+    owner\_uid           & string? & Optional owner override \\
+  }
+  \resheader\quad\textit{Full vehicle object with generated \texttt{id}}
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/fleet/vehicles/\{vehicle\_id\}/consumption}{\authrequired}{
+  Returns aggregated fuel consumption data for a vehicle including a
+  monthly breakdown of litres dispensed and cost in PKR.
+}
+  \reqheader\quad\textit{Path param:} \texttt{vehicle\_id}\\[4pt]
+  \resheader
+  \paramtable{
+    total\_fuel\_consumed & float  & All-time litres \\
+    monthly\_breakdown    & array  & Monthly litres and cost \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/fleet/expenses}{\authrequired}{
+  Logs a fleet expense (fuel, maintenance, etc.) against a vehicle. Fuel
+  expenses automatically update the vehicle's \texttt{total\_fuel\_consumed} counter.
+}
+  \reqheader
+  \paramtable{
+    vehicle\_id   & string  & Target vehicle \\
+    category      & enum    & \texttt{fuel | maintenance | insurance | other} \\
+    amount        & float   & Cost in PKR \\
+    litres        & float?  & If fuel category \\
+    station\_id   & string? & Refuelling station \\
+    description   & string? & Notes \\
+    expense\_date & date?   & Defaults to today \\
+  }
+  \resheader\quad\textit{Full expense object with generated \texttt{id}}
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/fleet/budget}{\authrequired}{
+  Returns the monthly budget for the current user (optionally per vehicle),
+  including spent amount and remaining balance.
+}
+  \reqheader\quad\textit{Query params:} \texttt{vehicle\_id?}, \texttt{month?} (1–12), \texttt{year?}\\[4pt]
+  \resheader
+  \paramtable{
+    budget\_amount  & float & Set budget in PKR \\
+    spent\_amount   & float & Total spent this period \\
+    remaining       & float & Remaining budget \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\PUT}{/fleet/budget}{\authrequired}{
+  Sets or updates the monthly fuel budget for a user or specific vehicle.
+  Overwrites any existing budget for the same period.
+}
+  \reqheader
+  \paramtable{
+    month      & int    & 1–12 \\
+    year       & int    & e.g.\ 2025 \\
+    amount     & float  & Budget in PKR \\
+    vehicle\_id & string? & Optional; applies to specific vehicle \\
+  }
+  \resheader
+  \paramtable{
+    message    & string & Confirmation \\
+    budget\_id & string & Budget document ID \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\PUT}{/fleet/vehicles/\{vehicle\_id\}/driver}{\authrequired}{
+  Assigns a driver to a vehicle by linking the driver's UID. A vehicle
+  can have only one assigned driver at a time.
+}
+  \reqheader
+  \paramtable{driver\_uid & string & Driver user ID to assign}\\[4pt]
+  \resheader
+  \paramtable{message & string & Confirmation}
+\end{endpoint}
+
+\newpage
+% ══════════════════════════════════════════════════════════════════════════════
+\section{IoT Devices  \normalfont\small\texttt{/api/v1/iot}}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{endpoint}{\POST}{/iot/devices/register}{\adminonly}{
+  Registers a new IoT device (ESP32, flow meter, camera, or gateway) and
+  links it to a nozzle and station. Sets initial firmware version and status.
+}
+  \reqheader
+  \paramtable{
+    device\_id        & string  & Unique hardware device ID \\
+    device\_type      & enum    & \texttt{esp32 | flow\_meter | camera | gateway} \\
+    firmware\_version & string  & Current firmware version \\
+    nozzle\_id        & string? & Linked nozzle \\
+    station\_id       & string? & Parent station \\
+    ip\_address       & string? & Local IP \\
+  }
+  \resheader\quad\textit{Full IoT device object with generated \texttt{id}}
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/iot/devices/\{device\_id\}/ping}{\noauth}{
+  Device heartbeat endpoint called by the ESP32 on a regular interval to
+  report it is alive. Updates \texttt{last\_ping} and device status in Firestore.
+}
+  \reqheader
+  \paramtable{
+    firmware\_version & string? & Optional version report \\
+    ip\_address       & string? & Current IP \\
+  }
+  \resheader
+  \paramtable{
+    status      & string   & \texttt{"ok"} \\
+    server\_time & datetime & Server UTC time for clock sync \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/iot/devices/\{device\_id\}/telemetry}{\noauth}{
+  Accepts sensor telemetry packets from the device including flow rate,
+  tamper detection, temperature, and signal strength for logging.
+}
+  \reqheader
+  \paramtable{
+    nozzle\_id        & string?  & Reported nozzle \\
+    flow\_rate        & float?   & L/min \\
+    total\_dispensed  & float?   & Session cumulative litres \\
+    tamper\_detected  & bool?    & Hardware tamper flag \\
+    temperature       & float?   & Sensor temperature °C \\
+    signal\_strength  & int?     & WiFi RSSI dBm \\
+    timestamp         & datetime? & Device-side timestamp \\
+  }
+  \resheader
+  \paramtable{status & string & \texttt{"ok"}}
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/iot/firmware/upload}{\adminonly}{
+  Uploads a firmware binary file to Cloudinary (\texttt{resource\_type: raw}) and creates
+  a firmware release record. Devices pull this URL during OTA updates.
+}
+  \reqheader\quad\textit{Query params:} \texttt{version}, \texttt{release\_notes?}, \texttt{is\_mandatory} (default false) · Body: \texttt{file} (binary .bin)\\[4pt]
+  \resheader
+  \paramtable{
+    id            & string & Firmware record ID \\
+    version       & string & Version string \\
+    download\_url & string & Cloudinary URL for the binary \\
+    is\_mandatory & bool   & Whether devices must update \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/iot/devices/\{device\_id\}/firmware/update}{\adminonly}{
+  Queues a firmware update command for a specific device. The device picks
+  up the command on its next ping and initiates the OTA download.
+}
+  \reqheader
+  \paramtable{
+    firmware\_version & string & Target version to install \\
+    force             & bool   & Override if already on this version \\
+  }
+  \resheader
+  \paramtable{
+    command\_id & string & Queued command ID \\
+    message     & string & Confirmation \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\PUT}{/iot/devices/\{device\_id\}/calibrate}{\adminonly}{
+  Queues a flow meter calibration command with a new calibration factor and
+  offset. Applied by the device on the next maintenance window.
+}
+  \reqheader
+  \paramtable{
+    calibration\_factor & float & Multiplier for raw readings \\
+    offset              & float & Additive offset, default 0 \\
+  }
+  \resheader
+  \paramtable{
+    command\_id & string & Queued command ID \\
+    message     & string & Confirmation \\
+  }
+\end{endpoint}
+
+\newpage
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Admin Dashboard  \normalfont\small\texttt{/api/v1/admin}}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{endpoint}{\GET}{/admin/overview}{\adminonly}{
+  Returns a real-time dashboard snapshot with active session count, today's
+  revenue and transaction count, and open fraud alerts.
+}
+  \reqheader\quad\textit{None}\\[4pt]
+  \resheader
+  \paramtable{
+    active\_sessions          & int    & Currently running sessions \\
+    revenue\_today\_pkr       & float  & Today's total revenue \\
+    transactions\_today       & int    & Today's transaction count \\
+    open\_fraud\_alerts       & int    & Unresolved alerts \\
+    avg\_litres\_per\_transaction & float & Average litres \\
+    generated\_at             & datetime & Snapshot timestamp \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/admin/nozzles/live}{\adminonly}{
+  Returns live operational status of all nozzles, including current flow
+  rate, tamper flags, and last-seen timestamps for real-time monitoring.
+}
+  \reqheader\quad\textit{None}\\[4pt]
+  \resheader\quad\textit{Array of nozzle objects with live readings}
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/admin/employees}{\adminonly}{
+  Creates a new employee account with the \texttt{employee} role. The account is
+  immediately active and can log in with the provided credentials.
+}
+  \reqheader
+  \paramtable{
+    email      & string  & Employee email \\
+    password   & string  & Minimum 8 characters \\
+    full\_name & string  & Minimum 2 characters \\
+    phone      & string? & Optional \\
+  }
+  \resheader\quad\textit{UserProfile object for the new employee}
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/admin/analytics}{\adminonly}{
+  Returns aggregated business analytics for the current period including
+  revenue by fuel type and transaction breakdown by payment method.
+}
+  \reqheader\quad\textit{None}\\[4pt]
+  \resheader
+  \paramtable{
+    total\_transactions      & int   & Period total \\
+    total\_revenue\_pkr      & float & PKR revenue \\
+    total\_litres\_dispensed & float & Litres dispensed \\
+    revenue\_by\_fuel\_type  & dict  & Breakdown per fuel type \\
+    transactions\_by\_payment & dict & Breakdown per payment method \\
+    open\_fraud\_alerts      & int   & Current open alerts \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/admin/complaints}{\adminonly}{
+  Logs a customer complaint against a user ID with subject and description.
+  Status defaults to \texttt{open} and appears in the complaints queue.
+}
+  \reqheader\quad\textit{Query params:} \texttt{user\_id}, \texttt{subject}, \texttt{description}\\[4pt]
+  \resheader
+  \paramtable{
+    id          & string   & Complaint ID \\
+    status      & string   & \texttt{"open"} \\
+    created\_at & datetime & Timestamp \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\PATCH}{/admin/complaints/\{complaint\_id\}}{\adminonly}{
+  Updates a complaint's status and optionally adds a resolution note.
+  Status transitions: \texttt{open → in\_progress → resolved | closed}.
+}
+  \reqheader\quad\textit{Query params:} \texttt{status}, \texttt{resolution\_note?}\\[4pt]
+  \resheader
+  \paramtable{message & string & Confirmation}
+\end{endpoint}
+
+\newpage
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Reports  \normalfont\small\texttt{/api/v1/reports}}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{endpoint}{\GET}{/reports/transactions}{\adminonly}{
+  Generates a transaction report for the selected period. Supports daily,
+  weekly, and monthly aggregation with optional station and fuel type filters.
+}
+  \reqheader\quad\textit{Query params:} \texttt{period} (\texttt{daily|weekly|monthly}), \texttt{station\_id?}, \texttt{fuel\_type?}\\[4pt]
+  \resheader\quad\textit{Report object with transaction list and aggregates}
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/reports/sales}{\adminonly}{
+  Returns a sales summary report grouped by the specified period. Includes
+  total revenue, litres, and transaction count per period segment.
+}
+  \reqheader\quad\textit{Query params:} \texttt{period}, \texttt{station\_id?}\\[4pt]
+  \resheader\quad\textit{Sales report with period breakdowns}
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/reports/fraud}{\adminonly}{
+  Produces a fraud report for the period showing alert counts by type and
+  severity, useful for compliance and security reviews.
+}
+  \reqheader\quad\textit{Query param:} \texttt{period} (default \texttt{monthly})\\[4pt]
+  \resheader
+  \paramtable{
+    period  & string & Report period \\
+    total   & int    & Total alerts \\
+    by\_type & dict  & Alert counts per type \\
+    items   & array  & Individual alert records \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/reports/employees}{\adminonly}{
+  Reports employee performance for the period, showing each employee's
+  transaction count, total revenue handled, and litres dispensed.
+}
+  \reqheader\quad\textit{Query param:} \texttt{period} (default \texttt{monthly})\\[4pt]
+  \resheader
+  \paramtable{
+    period    & string & Report period \\
+    employees & dict   & Keyed by employee ID: \texttt{transaction\_count}, \texttt{total\_revenue}, \texttt{total\_litres} \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/reports/nozzles}{\adminonly}{
+  Returns nozzle performance metrics for the period. Optionally filtered by
+  station. Useful for identifying underperforming or overloaded nozzles.
+}
+  \reqheader\quad\textit{Query params:} \texttt{period}, \texttt{station\_id?}\\[4pt]
+  \resheader
+  \paramtable{
+    period  & string & Report period \\
+    nozzles & dict   & Keyed by nozzle ID: \texttt{transaction\_count}, \texttt{total\_revenue}, \texttt{total\_litres} \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/reports/comparative}{\adminonly}{
+  Compares a metric (revenue, litres, or transactions) between two periods
+  and returns the percentage change.
+}
+  \reqheader\quad\textit{Query params:} \texttt{metric} (\texttt{revenue|litres|transactions}), \texttt{current\_period}, \texttt{previous\_period}\\[4pt]
+  \resheader
+  \paramtable{
+    metric         & string & Compared metric \\
+    current        & object & \texttt{total} and \texttt{count} for current period \\
+    previous       & object & \texttt{total} and \texttt{count} for previous period \\
+    change\_percent & float  & Percentage change \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\POST}{/reports/export}{\adminonly}{
+  Exports a report as a downloadable file. Supports PDF (ReportLab),
+  Excel (openpyxl), and CSV formats streamed directly in the response.
+}
+  \reqheader\quad\textit{Query params:} \texttt{report\_type} (\texttt{transactions|sales|fraud|employees}), \texttt{format} (\texttt{pdf|excel|csv}), \texttt{period}\\[4pt]
+  \resheader\quad\textit{File download (\texttt{application/pdf}, \texttt{.xlsx}, or \texttt{.csv})}
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/reports/charts/transactions}{\adminonly}{
+  Returns daily transaction chart data (count, revenue, litres per day) for
+  the requested period, ready to be consumed by a charting library.
+}
+  \reqheader\quad\textit{Query param:} \texttt{period} (default \texttt{weekly})\\[4pt]
+  \resheader
+  \paramtable{
+    period & string & Chart period \\
+    data   & dict   & Keyed by \texttt{YYYY-MM-DD}: \texttt{count}, \texttt{revenue}, \texttt{litres} \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/reports/charts/revenue}{\adminonly}{
+  Returns daily revenue figures for the chart period. Keyed by date string
+  for direct mapping to time-series chart axes.
+}
+  \reqheader\quad\textit{Query param:} \texttt{period}\\[4pt]
+  \resheader
+  \paramtable{
+    revenue\_by\_day & dict & \texttt{YYYY-MM-DD} $\rightarrow$ PKR float \\
+  }
+\end{endpoint}
+
+\begin{endpoint}{\GET}{/reports/charts/fraud}{\adminonly}{
+  Returns fraud alert distribution data by type and severity for the period,
+  suitable for pie or bar chart visualisation on the admin dashboard.
+}
+  \reqheader\quad\textit{Query param:} \texttt{period} (default \texttt{monthly})\\[4pt]
+  \resheader
+  \paramtable{
+    by\_type     & dict & Alert count per type \\
+    by\_severity & dict & Alert count per severity \\
+  }
+\end{endpoint}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\newpage
+\section*{Appendix — HTTP Status Codes}
+\addcontentsline{toc}{section}{Appendix — HTTP Status Codes}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{tabularx}{\linewidth}{>{\ttfamily\bfseries}l X}
+\toprule
+Code & Meaning \\
+\midrule
+200 OK             & Request succeeded; response body contains result \\
+201 Created        & Resource created; response body contains the new object \\
+204 No Content     & Success with no response body (DELETE operations) \\
+400 Bad Request    & Invalid input, missing required field, or validation error \\
+401 Unauthorized   & Missing or invalid JWT token \\
+403 Forbidden      & Valid token but insufficient role permissions \\
+404 Not Found      & Requested resource does not exist \\
+422 Unprocessable  & Request body schema validation failed (Pydantic) \\
+429 Too Many Requests & Rate limit exceeded (AI endpoints) \\
+500 Internal Error & Unexpected server-side failure \\
+502 Bad Gateway    & Upstream service failure (Cloudinary, Firebase, Groq) \\
+503 Unavailable    & Required third-party credentials not configured \\
+\bottomrule
+\end{tabularx}
+
+\vspace{1cm}
+
+\section*{Appendix — Base Firestore Collections}
+\addcontentsline{toc}{section}{Appendix — Base Firestore Collections}
+
+\begin{tabularx}{\linewidth}{>{\ttfamily}l X}
+\toprule
+Collection        & Purpose \\
+\midrule
+users             & User profiles, roles, hashed passwords, avatar URLs \\
+nozzles           & IoT nozzle configs and live telemetry \\
+sessions          & Fueling session lifecycle records \\
+transactions      & Completed dispense records with fraud flags \\
+evidence          & Photo metadata and Cloudinary URLs \\
+fraud\_alerts     & Detected and manually flagged anomalies \\
+stations          & Fuel station master data \\
+prices            & Current fuel prices per station \\
+price\_history    & Historical price records for trend analysis \\
+fleet\_vehicles   & Registered fleet vehicles \\
+fleet\_expenses   & Fuel and maintenance expense logs \\
+fleet\_drivers    & Driver profiles and vehicle assignments \\
+iot\_devices      & Hardware device registry \\
+iot\_firmware     & Firmware release records \\
+blacklist         & Blacklisted users, vehicles, and devices \\
+complaints        & Customer complaint records \\
+notifications     & User notification queue \\
+price\_alerts     & User-set price-drop alerts \\
+budgets           & Monthly fleet budget records \\
+tamper\_alerts    & Hardware tamper event records \\
+device\_commands  & Queued OTA and calibration commands \\
+telemetry\_logs   & Raw IoT sensor telemetry archive \\
+\bottomrule
+\end{tabularx}
+
+\end{document}
