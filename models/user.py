@@ -28,6 +28,28 @@ class UserLogin(BaseModel):
     password: str
 
 
+# ── Firebase-token-based auth (primary flow for mobile) ──────────────────────
+
+class UserCreateWithFirebase(BaseModel):
+    """
+    Signup payload — Flutter creates the Firebase Auth account first, then sends
+    the resulting ID token here so the backend can verify identity and create the
+    Firestore profile without ever handling the raw password.
+    """
+    firebase_id_token: str
+    full_name: str        = Field(min_length=2)
+    phone: Optional[str]  = None
+    role: UserRole        = UserRole.CUSTOMER
+
+
+class UserLoginWithFirebase(BaseModel):
+    """
+    Login payload — Flutter signs into Firebase Auth and sends the ID token.
+    The backend verifies it and returns its own JWT pair.
+    """
+    firebase_id_token: str
+
+
 class UserProfile(BaseModel):
     uid: str
     email: str

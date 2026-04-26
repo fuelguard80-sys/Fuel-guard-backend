@@ -27,7 +27,9 @@ from models.user import (
     RefreshTokenRequest,
     TokenResponse,
     UserCreate,
+    UserCreateWithFirebase,
     UserLogin,
+    UserLoginWithFirebase,
 )
 from services.auth_service import (
     create_firebase_auth_user,
@@ -64,39 +66,51 @@ async def _verify_via_firebase(email: str, password: str) -> bool:
 
 
 @router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def signup(payload: UserCreate):
-    db = get_db()
-
-    existing = db.collection(Collections.USERS).where("email", "==", payload.email).limit(1).get()
-    if existing:
+async def signup(payload: UserCreateWithFirebase):
+    """
+    Flutter creates the Firebase Auth account first (client-side), then sends the
+    resulting ID token here. The backend verifies the token, creates the Firestore
+    profile using the Firebase UID as the document key, and returns a JWT pair.
+    No raw password ever reaches the backend.
+    """
+    try:
+        decoded = firebase_auth.verify_id_token(payload.firebase_id_token)
+    except Exception as exc:
+        logger.warning("Signup: invalid Firebase ID token — %s", exc)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered",
+            detail="Invalid or expired Firebase token. Please try again.",
         )
 
-    uid = str(uuid.uuid4())
+    uid   = decoded["uid"]
+    email = decoded.get("email", "")
+
+    db = get_db()
+
+    # Idempotent — if the profile already exists just return fresh tokens.
+    existing_doc = db.collection(Collections.USERS).document(uid).get()
+    if existing_doc.exists:
+        user = existing_doc.to_dict()
+        token_payload = {"uid": uid, "role": user.get("role", "customer")}
+        return TokenResponse(
+            access_token=create_access_token(token_payload),
+            refresh_token=create_refresh_token(token_payload),
+            uid=uid,
+            role=user.get("role", "customer"),
+        )
+
     user_data = {
-        "uid":           uid,
-        "email":         payload.email,
-        "full_name":     payload.full_name,
-        "phone":         payload.phone,
-        "role":          payload.role.value,
-        "password_hash": hash_password(payload.password),
-        "avatar_url":    None,
-        "is_active":     True,
-        "email_verified": False,
-        "created_at":    datetime.now(timezone.utc),
+        "uid":            uid,
+        "email":          email,
+        "full_name":      payload.full_name,
+        "phone":          payload.phone,
+        "role":           payload.role.value,
+        "avatar_url":     None,
+        "is_active":      True,
+        "email_verified": decoded.get("email_verified", False),
+        "created_at":     datetime.now(timezone.utc),
     }
     db.collection(Collections.USERS).document(uid).set(user_data)
-
-    # Mirror the user into Firebase Auth so Firebase can send email-verification
-    # and password-reset emails on their behalf.  Failures are non-fatal.
-    create_firebase_auth_user(
-        uid=uid,
-        email=payload.email,
-        password=payload.password,
-        display_name=payload.full_name,
-    )
 
     token_payload = {"uid": uid, "role": payload.role.value}
     return TokenResponse(
@@ -108,47 +122,43 @@ async def signup(payload: UserCreate):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(payload: UserLogin):
-    db = get_db()
-
-    docs = db.collection(Collections.USERS).where("email", "==", payload.email).limit(1).get()
-    if not docs:
-        # Same message for wrong email and wrong password — prevents user enumeration.
+async def login(payload: UserLoginWithFirebase):
+    """
+    Flutter signs into Firebase Auth client-side and sends the ID token here.
+    The backend verifies the token and looks up the user profile by UID (direct
+    document fetch — no collection query needed).
+    """
+    try:
+        decoded = firebase_auth.verify_id_token(payload.firebase_id_token)
+    except Exception as exc:
+        logger.warning("Login: invalid Firebase ID token — %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="Invalid or expired session. Please sign in again.",
         )
 
-    user = docs[0].to_dict()
+    uid = decoded["uid"]
 
-    if not verify_password(payload.password, user.get("password_hash", "")):
-        # Bcrypt check failed — the user may have reset their password via the
-        # Firebase email link (browser flow), which updates Firebase Auth but
-        # not our Firestore hash. Try Firebase Auth as a fallback and, if it
-        # succeeds, self-heal the hash so future logins work normally.
-        firebase_verified = await _verify_via_firebase(payload.email, payload.password)
-        if not firebase_verified:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password",
-            )
-        # Sync the new hash into Firestore so we don't need Firebase next time.
-        db.collection(Collections.USERS).document(user["uid"]).update(
-            {"password_hash": hash_password(payload.password)}
+    db  = get_db()
+    doc = db.collection(Collections.USERS).document(uid).get()
+    if not doc.exists:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account not found. Please sign up first.",
         )
-        user["password_hash"] = hash_password(payload.password)
 
+    user = doc.to_dict()
     if not user.get("is_active", True):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is deactivated. Contact support.",
         )
 
-    token_payload = {"uid": user["uid"], "role": user["role"]}
+    token_payload = {"uid": uid, "role": user["role"]}
     return TokenResponse(
         access_token=create_access_token(token_payload),
         refresh_token=create_refresh_token(token_payload),
-        uid=user["uid"],
+        uid=uid,
         role=user["role"],
     )
 
